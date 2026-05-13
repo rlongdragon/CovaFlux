@@ -1,0 +1,44 @@
+services:
+  headscale:
+    image: headscale/headscale:latest
+    command: serve
+    volumes:
+      - headscale-data:/var/lib/headscale
+      - ./headscale:/etc/headscale
+    ports:
+      - "8080:8080"
+
+  covaflux-api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/data/covaflux.db
+      JWT_SECRET: change-this-jwt-secret-before-production
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: change-me-password
+      HEADSCALE_BASE_URL: http://headscale:8080
+      HEADSCALE_CLIENT_MODE: mock
+    volumes:
+      - covaflux-data:/data
+    ports:
+      - "3000:3000"
+    depends_on:
+      - headscale
+
+  covaflux-web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - covaflux-api
+
+volumes:
+  headscale-data:
+  covaflux-data:
+

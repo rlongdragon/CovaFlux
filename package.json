@@ -1,0 +1,23 @@
+{
+  "name": "covaflux",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @covaflux/api",
+    "dev:web": "npm run dev -w @covaflux/web",
+    "dev:api:local": "HOST=0.0.0.0 PORT=12145 DATABASE_URL=file:$PWD/data/covaflux.dev.db JWT_SECRET=dev-secret-change-me-at-least-16 BOOTSTRAP_ADMIN_USERNAME=admin BOOTSTRAP_ADMIN_PASSWORD=change-me-password npm run -w @covaflux/api dev",
+    "dev:web:local": "npm run -w @covaflux/web dev -- --port 12146 --strictPort",
+    "build": "npm run build -w @covaflux/shared && npm run build -w @covaflux/api && npm run build -w @covaflux/web",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate -w @covaflux/api",
+    "prisma:migrate": "npm run prisma:migrate -w @covaflux/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

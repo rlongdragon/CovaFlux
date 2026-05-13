@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  username          String    @unique
+  passwordHash      String
+  role              String
+  headscaleUserName String    @unique
+  disabledAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  ownedNodes        Node[]    @relation("NodeOwner")
+  groups            Group[]   @relation("GroupOwner")
+  groupMemberships  GroupMember[]
+  sharesCreated     NodeShare[] @relation("ShareCreator")
+  targetShares      NodeShare[] @relation("ShareTargetUser")
+  invitesCreated    InviteLink[]
+  apiTokens         ApiToken[]
+  preauthKeys       PreAuthKey[]
+}
+
+model Node {
+  id                   String    @id @default(cuid())
+  headscaleNodeId       String    @unique
+  ownerUserId           String?
+  name                 String
+  givenName            String?
+  machineKey           String?
+  nodeKey              String?
+  advertisedRoutesJson String    @default("[]")
+  isExitNode           Boolean   @default(false)
+  lastSeenAt           DateTime?
+  driftStatus          String    @default("managed")
+  deletedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  owner                User?     @relation("NodeOwner", fields: [ownerUserId], references: [id])
+  shares               NodeShare[]
+  invites              InviteLink[]
+  preauthKeys          PreAuthKey[]
+}
+
+model PreAuthKey {
+  id             String    @id @default(cuid())
+  headscaleKeyId String
+  userId         String
+  nodeId         String?
+  keyHash        String
+  reusable       Boolean   @default(false)
+  ephemeral      Boolean   @default(false)
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  user           User      @relation(fields: [userId], references: [id])
+  node           Node?     @relation(fields: [nodeId], references: [id])
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  ownerUserId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User     @relation("GroupOwner", fields: [ownerUserId], references: [id])
+  members     GroupMember[]
+  shares      NodeShare[] @relation("ShareTargetGroup")
+
+  @@unique([ownerUserId, name])
+}
+
+model GroupMember {
+  id            String   @id @default(cuid())
+  groupId       String
+  userId        String
+  addedByUserId String
+  createdAt     DateTime @default(now())
+
+  group         Group    @relation(fields: [groupId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@unique([groupId, userId])
+}
+
+model NodeShare {
+  id             String    @id @default(cuid())
+  nodeId         String
+  sharedByUserId String
+  targetUserId   String?
+  targetGroupId  String?
+  allowExitNode  Boolean   @default(false)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  node           Node      @relation(fields: [nodeId], references: [id])
+  sharedBy       User      @relation("ShareCreator", fields: [sharedByUserId], references: [id])
+  targetUser     User?     @relation("ShareTargetUser", fields: [targetUserId], references: [id])
+  targetGroup    Group?    @relation("ShareTargetGroup", fields: [targetGroupId], references: [id])
+}
+
+model InviteLink {
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique
+  nodeId          String
+  createdByUserId String
+  allowExitNode   Boolean   @default(false)
+  expiresAt       DateTime
+  maxUses         Int       @default(1)
+  usedCount       Int       @default(0)
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  node            Node      @relation(fields: [nodeId], references: [id])
+  createdBy       User      @relation(fields: [createdByUserId], references: [id])
+}
+
+model ApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  tokenHash   String    @unique
+  ownerUserId String?
+  scopesJson  String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner       User?     @relation(fields: [ownerUserId], references: [id])
+}
+
+model PolicyVersion {
+  id                    String    @id @default(cuid())
+  version               Int       @unique
+  policyJson            String
+  generatedByUserId     String?
+  appliedAt             DateTime?
+  rollbackFromVersionId String?
+  createdAt             DateTime  @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorType    String
+  actorId      String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadataJson String   @default("{}")
+  createdAt    DateTime @default(now())
+}

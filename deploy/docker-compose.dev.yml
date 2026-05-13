@@ -1,0 +1,8 @@
+services:
+  covaflux-api:
+    environment:
+      NODE_ENV: development
+      HEADSCALE_CLIENT_MODE: mock
+    volumes:
+      - ../apps/api/prisma:/app/apps/api/prisma
+
