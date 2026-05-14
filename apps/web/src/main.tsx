@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { KeyRound, RefreshCw, Shield, Users, Workflow } from "lucide-react";
+import { Clipboard, KeyRound, RefreshCw, Shield, Users, Workflow } from "lucide-react";
 import "./styles.css";
 
 const API_BASE =
@@ -53,6 +53,11 @@ type ShareItem = {
   revokedAt?: string | null;
 };
 
+type RegistrationCommand = {
+  key: string;
+  nodeName?: string;
+};
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem("covaflux_token") ?? "");
   const [actor, setActor] = useState<Actor | null>(null);
@@ -67,6 +72,7 @@ function App() {
   const [memberGroupId, setMemberGroupId] = useState("");
   const [memberUserId, setMemberUserId] = useState("");
   const [allowExitNode, setAllowExitNode] = useState(false);
+  const [registrationCommand, setRegistrationCommand] = useState<RegistrationCommand | null>(null);
   const [status, setStatus] = useState("");
   const [data, setData] = useState<ApiState>({
     users: [],
@@ -164,10 +170,16 @@ function App() {
       method: "POST",
       body: JSON.stringify({ nodeName: nodeName || undefined, reusable: false, ephemeral: false, expiresInHours: 24 })
     });
+    setRegistrationCommand({ key: body.key, nodeName: nodeName || undefined });
     setNodeName("");
     setStatus(`註冊 key: ${body.key}`);
     await api("/nodes/sync", { method: "POST", body: JSON.stringify({}) });
     await loadAll();
+  }
+
+  async function copyCommand(command: string) {
+    await navigator.clipboard.writeText(command);
+    setStatus("已複製指令");
   }
 
   async function shareNodeToUser() {
@@ -216,6 +228,10 @@ function App() {
   const nodes = data.nodes as NodeItem[];
   const groups = data.groups as GroupItem[];
   const shares = data.shares as ShareItem[];
+  const tailscaleBaseCommand = registrationCommand
+    ? `sudo tailscale up --login-server=http://${window.location.hostname}:12147 --authkey=${registrationCommand.key}`
+    : "";
+  const tailscaleExitNodeCommand = tailscaleBaseCommand ? `${tailscaleBaseCommand} --advertise-exit-node` : "";
 
   return (
     <main>
@@ -268,9 +284,18 @@ function App() {
         <Panel title="Nodes" icon={<Workflow size={18} />}>
           <div className="inline">
             <input placeholder="node name" value={nodeName} onChange={(event) => setNodeName(event.target.value)} />
-            <button onClick={() => createRegistrationKey().catch((error) => setStatus(error.message))}>建立註冊 key + sync mock node</button>
+            <button onClick={() => createRegistrationKey().catch((error) => setStatus(error.message))}>建立註冊 key</button>
             <button onClick={() => api("/nodes/sync", { method: "POST", body: JSON.stringify({}) }).then(loadAll).catch((error) => setStatus(error.message))}>Sync Nodes</button>
           </div>
+          {registrationCommand && (
+            <div className="command-box">
+              <div className="command-header">
+                <strong>節點加入指令{registrationCommand.nodeName ? ` / ${registrationCommand.nodeName}` : ""}</strong>
+              </div>
+              <CommandLine label="一般節點" command={tailscaleBaseCommand} onCopy={copyCommand} />
+              <CommandLine label="Exit node" command={tailscaleExitNodeCommand} onCopy={copyCommand} />
+            </div>
+          )}
           <Json data={data.nodes} />
         </Panel>
 
@@ -365,6 +390,18 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 
 function Json({ data }: { data: unknown }) {
   return <pre>{JSON.stringify(data, null, 2)}</pre>;
+}
+
+function CommandLine({ label, command, onCopy }: { label: string; command: string; onCopy: (command: string) => Promise<void> }) {
+  return (
+    <div className="command-line">
+      <span>{label}</span>
+      <code>{command}</code>
+      <button onClick={() => onCopy(command).catch(() => undefined)} title={`複製${label}指令`}>
+        <Clipboard size={16} /> 複製
+      </button>
+    </div>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -57,6 +57,7 @@ export async function nodesRoutes(app: FastifyInstance) {
   app.post("/nodes/sync", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const hsNodes = await app.headscale.listNodes();
+    const headscaleNodeIds = hsNodes.map((node) => node.id);
     const results = [];
     for (const hsNode of hsNodes) {
       const owner = await app.prisma.user.findUnique({ where: { headscaleUserName: hsNode.userName } });
@@ -88,8 +89,15 @@ export async function nodesRoutes(app: FastifyInstance) {
       });
       results.push(node);
     }
-    await audit(app.prisma, actor, "node.synced", "node", null, { count: results.length });
-    return { count: results.length, nodes: results };
+    const staleNodes = await app.prisma.node.updateMany({
+      where: {
+        deletedAt: null,
+        ...(headscaleNodeIds.length > 0 ? { headscaleNodeId: { notIn: headscaleNodeIds } } : {})
+      },
+      data: { deletedAt: new Date(), driftStatus: "deleted" }
+    });
+    await audit(app.prisma, actor, "node.synced", "node", null, { count: results.length, staleDeleted: staleNodes.count });
+    return { count: results.length, staleDeleted: staleNodes.count, nodes: results };
   });
 
   app.post("/nodes/:id/expire", async (request, reply) => {

@@ -98,6 +98,44 @@ label {
   margin-top: 10px;
 }
 
+.command-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #d7dfe2;
+  border-radius: 8px;
+  background: #f7fafb;
+}
+
+.command-header {
+  color: #172026;
+  font-size: 13px;
+}
+
+.command-line {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.command-line span {
+  font-size: 12px;
+  color: #42535a;
+}
+
+.command-line code {
+  min-width: 0;
+  overflow: auto;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #152026;
+  color: #d9edf2;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .check {
   display: inline-flex;
   align-items: center;
@@ -194,6 +232,10 @@ pre {
   }
 
   .list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .command-line {
     grid-template-columns: 1fr;
   }
 }

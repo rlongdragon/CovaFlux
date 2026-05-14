@@ -1,4 +1,4 @@
-server_url: http://localhost:8080
+server_url: http://23.146.248.110:12147
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
 grpc_listen_addr: 0.0.0.0:50443
@@ -19,8 +19,7 @@ database:
     path: /var/lib/headscale/db.sqlite
 
 policy:
-  mode: file
-  path: /etc/headscale/policy.json
+  mode: database
 
 dns:
   magic_dns: true
@@ -30,7 +29,12 @@ dns:
       - 1.1.1.1
       - 8.8.8.8
 
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
 log:
   level: info
   format: text
-

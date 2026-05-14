@@ -1,12 +1,14 @@
 services:
   headscale:
-    image: headscale/headscale:latest
-    command: serve
+    build:
+      context: ./headscale-runtime
     volumes:
       - headscale-data:/var/lib/headscale
       - ./headscale:/etc/headscale
+      - covaflux-secrets:/secrets
     ports:
-      - "8080:8080"
+      - "12147:8080"
+      - "12148:50443"
 
   covaflux-api:
     build:
@@ -19,26 +21,29 @@ services:
       BOOTSTRAP_ADMIN_USERNAME: admin
       BOOTSTRAP_ADMIN_PASSWORD: change-me-password
       HEADSCALE_BASE_URL: http://headscale:8080
-      HEADSCALE_CLIENT_MODE: mock
+      HEADSCALE_CLIENT_MODE: rest
+      HEADSCALE_API_KEY_FILE: /secrets/headscale_api_key
     volumes:
       - covaflux-data:/data
+      - covaflux-secrets:/secrets:ro
     ports:
-      - "3000:3000"
+      - "12145:3000"
     depends_on:
-      - headscale
+      headscale:
+        condition: service_started
 
   covaflux-web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_BASE_URL: http://localhost:3000
+        VITE_API_BASE_URL: http://localhost:12145
     ports:
-      - "5173:80"
+      - "12146:80"
     depends_on:
       - covaflux-api
 
 volumes:
   headscale-data:
   covaflux-data:
-
+  covaflux-secrets:

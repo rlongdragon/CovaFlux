@@ -2,7 +2,7 @@
 
 CovaFlux 是 Headscale 的輕量管理 API 與開發測試前台。
 
-目前第一版先使用 mock Headscale client，讓使用者、節點、分享、群組、policy version、API token 與 audit log 流程可以先跑起來。真正的 Headscale API/gRPC client 會在 Docker 測試環境確認細節後接上。
+系統支援 mock client 與 Headscale REST API client。開發時預設使用 mock；設定 `HEADSCALE_CLIENT_MODE=rest` 與 `HEADSCALE_API_KEY` 後，使用者、pre-auth key、節點同步與 policy apply 會打到真正的 Headscale。
 
 ## 開發
 
@@ -12,6 +12,14 @@ npm run prisma:generate
 DATABASE_URL=file:$PWD/data/covaflux.dev.db npm -w @covaflux/api exec prisma migrate deploy
 npm run dev:api:local
 npm run dev:web:local
+```
+
+串接本機 Docker Headscale：
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d headscale
+docker compose -f deploy/docker-compose.yml exec headscale headscale apikeys create --expiration 365d
+HEADSCALE_CLIENT_MODE=rest HEADSCALE_API_KEY=<API_KEY> npm run dev:api:local
 ```
 
 預設 bootstrap admin：
@@ -27,11 +35,13 @@ password: change-me-password
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
+Docker Compose 的 Headscale runtime 會自動建立 Headscale API key，並寫入 `covaflux-secrets` volume；API 服務會從 `HEADSCALE_API_KEY_FILE` 讀取，不需要手動 copy token。
+
 服務：
 
-- Web: http://localhost:5173
-- API: http://localhost:3000
-- Headscale: http://localhost:8080
+- Web: http://localhost:12146
+- API: http://localhost:12145
+- Headscale: http://localhost:12147
 
 ## 文件
 
