@@ -1,10 +1,12 @@
 # CovaFlux
 
-CovaFlux 是 Headscale 的輕量管理 API 與開發測試前台。
+[English](README.md) | [中文](README-zhtw.md)
 
-系統支援 mock client 與 Headscale REST API client。開發時預設使用 mock；設定 `HEADSCALE_CLIENT_MODE=rest` 與 `HEADSCALE_API_KEY` 後，使用者、pre-auth key、節點同步與 policy apply 會打到真正的 Headscale。
+CovaFlux is a lightweight management API and development web console for Headscale.
 
-## 開發
+It supports both a mock Headscale client and a real Headscale REST API client. The development default is the mock client. When `HEADSCALE_CLIENT_MODE=rest` and `HEADSCALE_API_KEY` are configured, user management, pre-auth key creation, node synchronization, and policy application are performed against a real Headscale instance.
+
+## Development
 
 ```bash
 npm install
@@ -14,7 +16,7 @@ npm run dev:api:local
 npm run dev:web:local
 ```
 
-串接本機 Docker Headscale：
+Connect to the Docker-managed local Headscale instance:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d headscale
@@ -22,7 +24,7 @@ docker compose -f deploy/docker-compose.yml exec headscale headscale apikeys cre
 HEADSCALE_CLIENT_MODE=rest HEADSCALE_API_KEY=<API_KEY> npm run dev:api:local
 ```
 
-預設 bootstrap admin：
+Default bootstrap admin:
 
 ```text
 username: admin
@@ -35,17 +37,17 @@ password: change-me-password
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-Docker Compose 的 Headscale runtime 會自動建立 Headscale API key，並寫入 `covaflux-secrets` volume；API 服務會從 `HEADSCALE_API_KEY_FILE` 讀取，不需要手動 copy token。
+The Docker Compose Headscale runtime automatically creates a Headscale API key and stores it in the `covaflux-secrets` volume. The API service reads it through `HEADSCALE_API_KEY_FILE`, so no manual token copy is required.
 
-服務：
+Services:
 
 - Web: http://localhost:12146
 - API: http://localhost:12145
 - Headscale client login server: http://localhost
 - Headscale development API: http://localhost:12147
 
-## 文件
+## Documentation
 
-完整規劃在 [docs/management-plan.md](docs/management-plan.md)。
+The full planning document is in [docs/management-plan.md](docs/management-plan.md).
 
-開發手冊在 [docs/development.md](docs/development.md)。
+The development guide is in [docs/development.md](docs/development.md).
