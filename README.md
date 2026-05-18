@@ -45,9 +45,3 @@ Services:
 - API: http://localhost:12145
 - Headscale client login server: http://localhost
 - Headscale development API: http://localhost:12147
-
-## Documentation
-
-The full planning document is in [docs/management-plan.md](docs/management-plan.md).
-
-The development guide is in [docs/development.md](docs/development.md).
