@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
-import type { HeadscalePolicy } from "../../services/headscale/HeadscaleClient.js";
+import type { HeadscaleNode, HeadscalePolicy } from "../../services/headscale/HeadscaleClient.js";
 
-export async function generatePolicy(prisma: PrismaClient): Promise<HeadscalePolicy> {
+export async function generatePolicy(prisma: PrismaClient, runtimeNodes: HeadscaleNode[] = []): Promise<HeadscalePolicy> {
   const now = new Date();
   const users = await prisma.user.findMany({ where: { disabledAt: null }, orderBy: { username: "asc" } });
   const nodes = await prisma.node.findMany({
@@ -27,6 +27,8 @@ export async function generatePolicy(prisma: PrismaClient): Promise<HeadscalePol
     groups[`group:${user.username}`] = [`${user.username}@`];
   }
 
+  const runtimeById = new Map(runtimeNodes.map((node) => [node.id, node]));
+  const hosts: Record<string, string> = {};
   const aclMap = new Map<string, Set<string>>();
   const addAcl = (src: string, dst: string) => {
     if (!aclMap.has(src)) aclMap.set(src, new Set());
@@ -34,7 +36,13 @@ export async function generatePolicy(prisma: PrismaClient): Promise<HeadscalePol
   };
 
   for (const node of nodes) {
-    const dst = `${node.name}:*`;
+    const runtime = runtimeById.get(node.headscaleNodeId);
+    const policyHost = node.givenName ?? node.name;
+    const hostAddress = runtime?.ipAddresses.find((address) => address.includes(".")) ?? runtime?.ipAddresses[0];
+    if (!hostAddress) continue;
+
+    hosts[policyHost] = hostAddress;
+    const dst = `${policyHost}:*`;
     if (node.owner) addAcl(`${node.owner.username}@`, dst);
 
     for (const share of node.shares) {
@@ -57,6 +65,5 @@ export async function generatePolicy(prisma: PrismaClient): Promise<HeadscalePol
       dst: [...dstSet].sort()
     }));
 
-  return { groups, acls };
+  return { hosts, groups, acls };
 }
-

@@ -28,10 +28,13 @@ interface HeadscaleApiNode {
   id?: string;
   machineKey?: string;
   nodeKey?: string;
+  ipAddresses?: string[];
   name?: string;
   givenName?: string;
   user?: HeadscaleApiUser;
   lastSeen?: string;
+  expiry?: string;
+  online?: boolean;
   approvedRoutes?: string[];
   availableRoutes?: string[];
   subnetRoutes?: string[];
@@ -95,6 +98,7 @@ export class RestHeadscaleClient implements HeadscaleClient {
     const response = await this.request<{ nodes?: HeadscaleApiNode[] }>("/api/v1/node");
     return (response.nodes ?? []).map((node) => {
       const advertisedRoutes = node.availableRoutes ?? node.subnetRoutes ?? [];
+      const expiresAt = node.expiry ? new Date(node.expiry) : undefined;
       return {
         id: this.requireString(node.id, "node.id"),
         userName: node.user?.name ?? "",
@@ -102,9 +106,13 @@ export class RestHeadscaleClient implements HeadscaleClient {
         givenName: node.givenName,
         machineKey: node.machineKey,
         nodeKey: node.nodeKey,
+        ipAddresses: node.ipAddresses ?? [],
         advertisedRoutes,
         isExitNode: advertisedRoutes.includes("0.0.0.0/0") || advertisedRoutes.includes("::/0"),
-        lastSeenAt: node.lastSeen ? new Date(node.lastSeen) : undefined
+        online: Boolean(node.online),
+        expired: expiresAt ? expiresAt.getTime() > 0 && expiresAt <= new Date() : false,
+        lastSeenAt: node.lastSeen ? new Date(node.lastSeen) : undefined,
+        expiresAt
       };
     });
   }

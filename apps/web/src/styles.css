@@ -79,6 +79,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button.danger {
+  background: #8a2d2d;
+  border-color: #8a2d2d;
+}
+
+button.danger:hover {
+  background: #6f2323;
+}
+
 label {
   display: grid;
   gap: 4px;
@@ -163,6 +172,106 @@ label {
   border-radius: 6px;
 }
 
+.empty-state {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px dashed #b8c3c7;
+  border-radius: 6px;
+  color: #42535a;
+  background: #f7fafb;
+}
+
+.node-table {
+  display: block;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.node-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) 82px minmax(130px, 1fr) minmax(78px, 0.7fr) minmax(116px, 0.8fr) 142px;
+  gap: 10px;
+  align-items: center;
+  min-width: 780px;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid #d7dfe2;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.node-head {
+  background: #f2f6f7;
+  color: #42535a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.node-name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.node-name strong,
+.node-name small,
+.mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-name small {
+  color: #5f7077;
+  font-size: 12px;
+}
+
+.mono {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pill.online {
+  background: #dff4e5;
+  color: #1f6b36;
+}
+
+.pill.offline {
+  background: #eef1f2;
+  color: #42535a;
+}
+
+.pill.expired {
+  background: #ffe3dd;
+  color: #8a2d2d;
+}
+
+.node-actions {
+  display: flex;
+  justify-content: end;
+  gap: 6px;
+}
+
+.node-actions button {
+  min-width: 66px;
+  padding: 0 8px;
+}
+
 .toolbar {
   padding: 14px;
   background: white;
@@ -233,6 +342,19 @@ pre {
 
   .list-item {
     grid-template-columns: 1fr;
+  }
+
+  .node-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .node-head {
+    display: none;
+  }
+
+  .node-actions {
+    justify-content: stretch;
   }
 
   .command-line {

@@ -1,4 +1,4 @@
-server_url: http://23.146.248.110:12147
+server_url: http://23.146.248.110
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 0.0.0.0:9090
 grpc_listen_addr: 0.0.0.0:50443

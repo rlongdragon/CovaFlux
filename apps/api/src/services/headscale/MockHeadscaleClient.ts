@@ -45,8 +45,11 @@ export class MockHeadscaleClient implements HeadscaleClient {
       givenName: nodeName,
       machineKey: createOpaqueToken("mkey"),
       nodeKey: createOpaqueToken("nodekey"),
+      ipAddresses: [],
       advertisedRoutes: [],
       isExitNode: false,
+      online: true,
+      expired: false,
       lastSeenAt: new Date()
     });
 
@@ -59,7 +62,7 @@ export class MockHeadscaleClient implements HeadscaleClient {
 
   async expireNode(nodeId: string) {
     const node = this.nodes.get(nodeId);
-    if (node) this.nodes.set(nodeId, { ...node, lastSeenAt: new Date(0) });
+    if (node) this.nodes.set(nodeId, { ...node, online: false, expired: true, expiresAt: new Date(0), lastSeenAt: new Date() });
   }
 
   async deleteNode(nodeId: string) {

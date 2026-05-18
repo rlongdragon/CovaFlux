@@ -27,12 +27,17 @@ export interface HeadscaleNode {
   givenName?: string;
   machineKey?: string;
   nodeKey?: string;
+  ipAddresses: string[];
   advertisedRoutes: string[];
   isExitNode: boolean;
+  online: boolean;
+  expired: boolean;
   lastSeenAt?: Date;
+  expiresAt?: Date;
 }
 
 export interface HeadscalePolicy {
+  hosts?: Record<string, string>;
   groups?: Record<string, string[]>;
   acls: Array<{
     action: "accept";

@@ -13,7 +13,9 @@ describe("generatePolicy", () => {
       node: {
         findMany: async () => [
           {
+            headscaleNodeId: "1",
             name: "alice-node",
+            givenName: "alice-node",
             owner: { username: "alice" },
             shares: [
               {
@@ -26,7 +28,20 @@ describe("generatePolicy", () => {
       }
     } as never;
 
-    await expect(generatePolicy(prisma)).resolves.toEqual({
+    await expect(generatePolicy(prisma, [{
+      id: "1",
+      userName: "alice",
+      name: "alice-node",
+      givenName: "alice-node",
+      ipAddresses: ["100.64.0.10", "fd7a:115c:a1e0::10"],
+      advertisedRoutes: [],
+      isExitNode: false,
+      online: true,
+      expired: false
+    }])).resolves.toEqual({
+      hosts: {
+        "alice-node": "100.64.0.10"
+      },
       groups: {
         "group:alice": ["alice@"],
         "group:bob": ["bob@"]
@@ -38,4 +53,3 @@ describe("generatePolicy", () => {
     });
   });
 });
-

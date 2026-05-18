@@ -38,7 +38,12 @@ export async function buildApp() {
       }
     }
   );
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["authorization", "content-type"]
+  });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(registerDbPlugin);
   await app.register(registerHeadscalePlugin);

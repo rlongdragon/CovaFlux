@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Clipboard, KeyRound, RefreshCw, Shield, Users, Workflow } from "lucide-react";
+import { Clipboard, KeyRound, Power, RefreshCw, Shield, Trash2, Users, Workflow } from "lucide-react";
 import "./styles.css";
 
 const API_BASE =
@@ -32,10 +32,18 @@ type UserItem = {
 
 type NodeItem = {
   id: string;
+  headscaleNodeId?: string;
   name: string;
   givenName?: string | null;
   isExitNode?: boolean;
   ownerUserId?: string | null;
+  owner?: UserItem | null;
+  ipAddresses?: string[];
+  online?: boolean;
+  expired?: boolean;
+  lastSeenAt?: string | null;
+  expiresAt?: string | null;
+  driftStatus?: string;
 };
 
 type GroupItem = {
@@ -220,6 +228,25 @@ function App() {
     await loadAll();
   }
 
+  async function syncNodes() {
+    await api("/nodes/sync", { method: "POST", body: JSON.stringify({}) });
+    setStatus("節點已同步");
+    await loadAll();
+  }
+
+  async function expireNode(nodeId: string) {
+    await api(`/nodes/${nodeId}/expire`, { method: "POST", body: JSON.stringify({}) });
+    setStatus("節點已設為 expired");
+    await syncNodes();
+  }
+
+  async function deleteNode(nodeId: string) {
+    if (!window.confirm("確定要從 Headscale 刪除這個節點？")) return;
+    await api(`/nodes/${nodeId}`, { method: "DELETE" });
+    setStatus("節點已刪除");
+    await loadAll();
+  }
+
   useEffect(() => {
     loadAll().catch((error) => setStatus(error.message));
   }, [token]);
@@ -228,8 +255,9 @@ function App() {
   const nodes = data.nodes as NodeItem[];
   const groups = data.groups as GroupItem[];
   const shares = data.shares as ShareItem[];
+  const tailscaleLoginServer = `http://${window.location.hostname}`;
   const tailscaleBaseCommand = registrationCommand
-    ? `sudo tailscale up --login-server=http://${window.location.hostname}:12147 --authkey=${registrationCommand.key}`
+    ? `sudo tailscale up --reset --login-server=${tailscaleLoginServer} --auth-key=${registrationCommand.key}`
     : "";
   const tailscaleExitNodeCommand = tailscaleBaseCommand ? `${tailscaleBaseCommand} --advertise-exit-node` : "";
 
@@ -285,7 +313,7 @@ function App() {
           <div className="inline">
             <input placeholder="node name" value={nodeName} onChange={(event) => setNodeName(event.target.value)} />
             <button onClick={() => createRegistrationKey().catch((error) => setStatus(error.message))}>建立註冊 key</button>
-            <button onClick={() => api("/nodes/sync", { method: "POST", body: JSON.stringify({}) }).then(loadAll).catch((error) => setStatus(error.message))}>Sync Nodes</button>
+            <button onClick={() => syncNodes().catch((error) => setStatus(error.message))}>Sync Nodes</button>
           </div>
           {registrationCommand && (
             <div className="command-box">
@@ -296,7 +324,7 @@ function App() {
               <CommandLine label="Exit node" command={tailscaleExitNodeCommand} onCopy={copyCommand} />
             </div>
           )}
-          <Json data={data.nodes} />
+          <NodeList nodes={nodes} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
         </Panel>
 
         <Panel title="Groups" icon={<Users size={18} />}>
@@ -388,6 +416,67 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
   );
 }
 
+function NodeList({
+  nodes,
+  onExpire,
+  onDelete,
+  onError
+}: {
+  nodes: NodeItem[];
+  onExpire: (nodeId: string) => Promise<void>;
+  onDelete: (nodeId: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  if (nodes.length === 0) {
+    return <div className="empty-state">尚未同步到節點</div>;
+  }
+
+  return (
+    <div className="node-table">
+      <div className="node-row node-head">
+        <span>節點</span>
+        <span>狀態</span>
+        <span>IP</span>
+        <span>Owner</span>
+        <span>Last seen</span>
+        <span>操作</span>
+      </div>
+      {nodes.map((node) => {
+        const ipAddresses = node.ipAddresses ?? [];
+        const statusLabel = node.expired ? "expired" : node.online ? "online" : "offline";
+        return (
+          <div className="node-row" key={node.id}>
+            <div className="node-name">
+              <strong>{node.givenName ?? node.name}</strong>
+              <small>hs #{node.headscaleNodeId ?? "-"} / {node.driftStatus ?? "managed"}</small>
+            </div>
+            <span className={`pill ${statusLabel}`}>{statusLabel}</span>
+            <span className="mono">{ipAddresses.join(", ") || "-"}</span>
+            <span>{node.owner?.username ?? node.ownerUserId ?? "-"}</span>
+            <span>{formatDate(node.lastSeenAt)}</span>
+            <div className="node-actions">
+              <button
+                disabled={node.expired}
+                onClick={() => onExpire(node.id).catch((error) => onError(error.message))}
+                title="Expire node"
+              >
+                <Power size={15} /> Expire
+              </button>
+              <button
+                className="danger"
+                onClick={() => onDelete(node.id).catch((error) => onError(error.message))}
+                title="Delete node from Headscale"
+              >
+                <Trash2 size={15} /> Delete
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Json({ data }: { data: unknown }) {
   return <pre>{JSON.stringify(data, null, 2)}</pre>;
 }
@@ -402,6 +491,13 @@ function CommandLine({ label, command, onCopy }: { label: string; command: strin
       </button>
     </div>
   );
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

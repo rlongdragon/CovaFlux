@@ -5,7 +5,7 @@ import { audit } from "../../utils/audit.js";
 import { generatePolicy } from "./policy.generator.js";
 
 export async function applyCurrentPolicy(prisma: PrismaClient, headscale: HeadscaleClient, actor?: AuthActor) {
-  const policy = await generatePolicy(prisma);
+  const policy = await generatePolicy(prisma, await headscale.listNodes());
   await headscale.applyPolicy(policy);
   const latest = await prisma.policyVersion.findFirst({ orderBy: { version: "desc" } });
   const version = (latest?.version ?? 0) + 1;
@@ -20,4 +20,3 @@ export async function applyCurrentPolicy(prisma: PrismaClient, headscale: Headsc
   await audit(prisma, actor, "policy.applied", "policy_version", record.id, { version });
   return record;
 }
-

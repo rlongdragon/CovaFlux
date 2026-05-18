@@ -6,7 +6,7 @@ import { applyCurrentPolicy } from "./policy.service.js";
 export async function policyRoutes(app: FastifyInstance) {
   app.get("/policy/preview", async (request) => {
     await app.requireScope(request, "policy:read");
-    return generatePolicy(app.prisma);
+    return generatePolicy(app.prisma, await app.headscale.listNodes());
   });
 
   app.post("/policy/apply", async (request) => {
@@ -44,4 +44,3 @@ export async function policyRoutes(app: FastifyInstance) {
     return record;
   });
 }
-

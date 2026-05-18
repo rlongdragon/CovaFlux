@@ -11,7 +11,18 @@ export async function nodesRoutes(app: FastifyInstance) {
   app.get("/nodes", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
     const where = actor.type === "user" && actor.role !== "admin" ? { ownerUserId: actor.id, deletedAt: null } : { deletedAt: null };
-    return app.prisma.node.findMany({ where, include: { owner: { select: { id: true, username: true } } }, orderBy: { createdAt: "desc" } });
+    const nodes = await app.prisma.node.findMany({ where, include: { owner: { select: { id: true, username: true } } }, orderBy: { createdAt: "desc" } });
+    const runtimeById = new Map((await app.headscale.listNodes()).map((node) => [node.id, node]));
+    return nodes.map((node) => {
+      const runtime = runtimeById.get(node.headscaleNodeId);
+      return {
+        ...node,
+        ipAddresses: runtime?.ipAddresses ?? [],
+        online: runtime?.online ?? false,
+        expired: runtime?.expired ?? false,
+        expiresAt: runtime?.expiresAt ?? null
+      };
+    });
   });
 
   app.get("/nodes/:id", async (request, reply) => {
