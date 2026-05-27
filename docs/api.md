@@ -264,6 +264,7 @@ Behavior:
 - The response is enriched with live Headscale runtime state: `ipAddresses`, `online`, `expired`, and `expiresAt`.
 - Newly discovered Headscale nodes are automatically assigned to the matching CovaFlux user by `headscaleUserName`.
 - If the node was created from a non-reusable key issued by CovaFlux, the oldest matching pending pre-auth key record for the same Headscale user is marked used and linked to the node.
+- If the synchronized node state changes the generated ACL policy, CovaFlux applies the updated policy to Headscale and records a new policy version.
 
 ### `GET /nodes/:id`
 
@@ -327,6 +328,7 @@ Behavior:
 - Upserts live Headscale nodes.
 - Assigns owner by pending registration intent when available, then by matching Headscale username to CovaFlux `headscaleUserName`.
 - Marks local nodes missing from Headscale as deleted with `driftStatus: "deleted"`.
+- Applies the generated ACL policy to Headscale only when the synchronized node state changes the policy.
 
 Response:
 
@@ -334,6 +336,7 @@ Response:
 {
   "count": 3,
   "staleDeleted": 0,
+  "policyApplied": true,
   "nodes": []
 }
 ```

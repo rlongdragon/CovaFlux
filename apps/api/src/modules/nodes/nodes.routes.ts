@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { registerKeySchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashLookupToken } from "../../utils/secrets.js";
+import { applyCurrentPolicy } from "../policy/policy.service.js";
 import { syncHeadscaleNodes } from "./nodeSync.service.js";
 
 function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeOwnerUserId?: string | null) {
@@ -12,6 +13,7 @@ export async function nodesRoutes(app: FastifyInstance) {
   app.get("/nodes", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
     const syncResult = await syncHeadscaleNodes(app.prisma, app.headscale, actor);
+    await applyCurrentPolicy(app.prisma, app.headscale, actor, { runtimeNodes: syncResult.runtimeNodes, skipSync: true, onlyIfChanged: true });
     const where = actor.type === "user" && actor.role !== "admin" ? { ownerUserId: actor.id, deletedAt: null } : { deletedAt: null };
     const nodes = await app.prisma.node.findMany({ where, include: { owner: { select: { id: true, username: true } } }, orderBy: { createdAt: "desc" } });
     const runtimeById = new Map(syncResult.runtimeNodes.map((node) => [node.id, node]));
@@ -70,7 +72,8 @@ export async function nodesRoutes(app: FastifyInstance) {
   app.post("/nodes/sync", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const result = await syncHeadscaleNodes(app.prisma, app.headscale, actor, { auditAction: true });
-    return { count: result.count, staleDeleted: result.staleDeleted, nodes: result.nodes };
+    const policyVersion = await applyCurrentPolicy(app.prisma, app.headscale, actor, { runtimeNodes: result.runtimeNodes, skipSync: true, onlyIfChanged: true });
+    return { count: result.count, staleDeleted: result.staleDeleted, policyApplied: Boolean(policyVersion), nodes: result.nodes };
   });
 
   app.post("/nodes/:id/expire", async (request, reply) => {
