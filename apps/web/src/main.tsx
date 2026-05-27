@@ -181,7 +181,6 @@ function App() {
     setRegistrationCommand({ key: body.key, nodeName: nodeName || undefined });
     setNodeName("");
     setStatus(`註冊 key: ${body.key}`);
-    await api("/nodes/sync", { method: "POST", body: JSON.stringify({}) });
     await loadAll();
   }
 
@@ -313,7 +312,7 @@ function App() {
           <div className="inline">
             <input placeholder="node name" value={nodeName} onChange={(event) => setNodeName(event.target.value)} />
             <button onClick={() => createRegistrationKey().catch((error) => setStatus(error.message))}>建立註冊 key</button>
-            <button onClick={() => syncNodes().catch((error) => setStatus(error.message))}>Sync Nodes</button>
+            <button onClick={() => syncNodes().catch((error) => setStatus(error.message))}>修復同步</button>
           </div>
           {registrationCommand && (
             <div className="command-box">
@@ -428,7 +427,7 @@ function NodeList({
   onError: (message: string) => void;
 }) {
   if (nodes.length === 0) {
-    return <div className="empty-state">尚未同步到節點</div>;
+    return <div className="empty-state">尚未偵測到節點</div>;
   }
 
   return (

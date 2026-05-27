@@ -253,15 +253,17 @@ Response:
 
 ### `GET /nodes`
 
-Lists synchronized nodes.
+Lists nodes. The API first reads live Headscale nodes, upserts them into the local database, and then returns the caller-visible local records enriched with runtime state.
 
 Auth: user or `nodes:read`.
 
 Behavior:
 
-- Admin users receive all non-deleted local nodes.
-- Non-admin users receive owned non-deleted local nodes.
+- Admin users receive all non-deleted nodes.
+- Non-admin users receive owned non-deleted nodes.
 - The response is enriched with live Headscale runtime state: `ipAddresses`, `online`, `expired`, and `expiresAt`.
+- Newly discovered Headscale nodes are automatically assigned to the matching CovaFlux user by `headscaleUserName`.
+- If the node was created from a non-reusable key issued by CovaFlux, the oldest matching pending pre-auth key record for the same Headscale user is marked used and linked to the node.
 
 ### `GET /nodes/:id`
 
@@ -306,6 +308,8 @@ Response:
 }
 ```
 
+CovaFlux stores a pending registration intent for the key. The full key is returned only in this response; only a hash and short metadata are stored locally. When a matching node appears in Headscale during a later `/nodes`, `/nodes/sync`, `/policy/preview`, or `/policy/apply` request, CovaFlux automatically records the node owner and links the oldest unused non-reusable key record for the same Headscale user to the node.
+
 Example Tailscale command:
 
 ```bash
@@ -314,14 +318,14 @@ sudo tailscale up --reset --login-server=http://<headscale-host> --auth-key=hske
 
 ### `POST /nodes/sync`
 
-Synchronizes nodes from Headscale into the local database.
+Manually synchronizes nodes from Headscale into the local database. Normal node listing and policy generation already perform this refresh automatically, so this endpoint is mainly for repair/debug workflows.
 
 Auth: user or `nodes:write`.
 
 Behavior:
 
 - Upserts live Headscale nodes.
-- Assigns owner by matching Headscale username to CovaFlux `headscaleUserName`.
+- Assigns owner by pending registration intent when available, then by matching Headscale username to CovaFlux `headscaleUserName`.
 - Marks local nodes missing from Headscale as deleted with `driftStatus: "deleted"`.
 
 Response:
@@ -625,7 +629,7 @@ Response:
 
 ### `GET /policy/preview`
 
-Generates the current policy preview without applying it.
+Refreshes live Headscale nodes, then generates the current policy preview without applying it.
 
 Auth: `policy:read`.
 
@@ -637,7 +641,7 @@ The generated policy includes:
 
 ### `POST /policy/apply`
 
-Generates and applies the current policy to Headscale, then records a policy version.
+Refreshes live Headscale nodes, generates and applies the current policy to Headscale, then records a policy version.
 
 Auth: `policy:write`.
 

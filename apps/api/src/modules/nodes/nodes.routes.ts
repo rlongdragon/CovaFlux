@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { registerKeySchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashLookupToken } from "../../utils/secrets.js";
+import { syncHeadscaleNodes } from "./nodeSync.service.js";
 
 function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeOwnerUserId?: string | null) {
   return actor.type === "user" && (actor.role === "admin" || actor.id === nodeOwnerUserId);
@@ -10,9 +11,10 @@ function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>
 export async function nodesRoutes(app: FastifyInstance) {
   app.get("/nodes", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
+    const syncResult = await syncHeadscaleNodes(app.prisma, app.headscale, actor);
     const where = actor.type === "user" && actor.role !== "admin" ? { ownerUserId: actor.id, deletedAt: null } : { deletedAt: null };
     const nodes = await app.prisma.node.findMany({ where, include: { owner: { select: { id: true, username: true } } }, orderBy: { createdAt: "desc" } });
-    const runtimeById = new Map((await app.headscale.listNodes()).map((node) => [node.id, node]));
+    const runtimeById = new Map(syncResult.runtimeNodes.map((node) => [node.id, node]));
     return nodes.map((node) => {
       const runtime = runtimeById.get(node.headscaleNodeId);
       return {
@@ -67,48 +69,8 @@ export async function nodesRoutes(app: FastifyInstance) {
 
   app.post("/nodes/sync", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
-    const hsNodes = await app.headscale.listNodes();
-    const headscaleNodeIds = hsNodes.map((node) => node.id);
-    const results = [];
-    for (const hsNode of hsNodes) {
-      const owner = await app.prisma.user.findUnique({ where: { headscaleUserName: hsNode.userName } });
-      const node = await app.prisma.node.upsert({
-        where: { headscaleNodeId: hsNode.id },
-        create: {
-          headscaleNodeId: hsNode.id,
-          ownerUserId: owner?.id,
-          name: hsNode.name,
-          givenName: hsNode.givenName,
-          machineKey: hsNode.machineKey,
-          nodeKey: hsNode.nodeKey,
-          advertisedRoutesJson: JSON.stringify(hsNode.advertisedRoutes),
-          isExitNode: hsNode.isExitNode,
-          lastSeenAt: hsNode.lastSeenAt,
-          driftStatus: owner ? "managed" : "unassigned"
-        },
-        update: {
-          ownerUserId: owner?.id,
-          name: hsNode.name,
-          givenName: hsNode.givenName,
-          machineKey: hsNode.machineKey,
-          nodeKey: hsNode.nodeKey,
-          advertisedRoutesJson: JSON.stringify(hsNode.advertisedRoutes),
-          isExitNode: hsNode.isExitNode,
-          lastSeenAt: hsNode.lastSeenAt,
-          driftStatus: owner ? "managed" : "unassigned"
-        }
-      });
-      results.push(node);
-    }
-    const staleNodes = await app.prisma.node.updateMany({
-      where: {
-        deletedAt: null,
-        ...(headscaleNodeIds.length > 0 ? { headscaleNodeId: { notIn: headscaleNodeIds } } : {})
-      },
-      data: { deletedAt: new Date(), driftStatus: "deleted" }
-    });
-    await audit(app.prisma, actor, "node.synced", "node", null, { count: results.length, staleDeleted: staleNodes.count });
-    return { count: results.length, staleDeleted: staleNodes.count, nodes: results };
+    const result = await syncHeadscaleNodes(app.prisma, app.headscale, actor, { auditAction: true });
+    return { count: result.count, staleDeleted: result.staleDeleted, nodes: result.nodes };
   });
 
   app.post("/nodes/:id/expire", async (request, reply) => {

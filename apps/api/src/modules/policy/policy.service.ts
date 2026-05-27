@@ -2,10 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import type { AuthActor } from "../../plugins/auth.js";
 import type { HeadscaleClient } from "../../services/headscale/HeadscaleClient.js";
 import { audit } from "../../utils/audit.js";
+import { syncHeadscaleNodes } from "../nodes/nodeSync.service.js";
 import { generatePolicy } from "./policy.generator.js";
 
 export async function applyCurrentPolicy(prisma: PrismaClient, headscale: HeadscaleClient, actor?: AuthActor) {
-  const policy = await generatePolicy(prisma, await headscale.listNodes());
+  const syncResult = await syncHeadscaleNodes(prisma, headscale, actor);
+  const policy = await generatePolicy(prisma, syncResult.runtimeNodes);
   await headscale.applyPolicy(policy);
   const latest = await prisma.policyVersion.findFirst({ orderBy: { version: "desc" } });
   const version = (latest?.version ?? 0) + 1;

@@ -1,12 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { audit } from "../../utils/audit.js";
+import { syncHeadscaleNodes } from "../nodes/nodeSync.service.js";
 import { generatePolicy } from "./policy.generator.js";
 import { applyCurrentPolicy } from "./policy.service.js";
 
 export async function policyRoutes(app: FastifyInstance) {
   app.get("/policy/preview", async (request) => {
-    await app.requireScope(request, "policy:read");
-    return generatePolicy(app.prisma, await app.headscale.listNodes());
+    const actor = await app.requireScope(request, "policy:read");
+    const syncResult = await syncHeadscaleNodes(app.prisma, app.headscale, actor);
+    return generatePolicy(app.prisma, syncResult.runtimeNodes);
   });
 
   app.post("/policy/apply", async (request) => {
