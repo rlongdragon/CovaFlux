@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthActor } from "../../plugins/auth.js";
+import { registerErrorHandler } from "../../plugins/error-handler.js";
 import type { HeadscaleClient } from "../../services/headscale/HeadscaleClient.js";
 import { nodesRoutes } from "./nodes.routes.js";
 
@@ -19,13 +20,14 @@ const actor: AuthActor = {
   role: "user"
 };
 
-function buildRouteApp(prisma: Record<string, unknown>, headscale: Partial<HeadscaleClient>) {
+function buildRouteApp(prisma: Record<string, unknown>, headscale: Partial<HeadscaleClient>, routeActor: AuthActor = actor) {
   const app = Fastify({ logger: false });
+  registerErrorHandler(app);
   app.decorate("prisma", prisma);
   app.decorate("headscale", headscale);
-  app.decorate("requireUserOrScope", vi.fn(async () => actor));
-  app.decorate("requireAuth", vi.fn(async () => actor));
-  app.decorate("requireScope", vi.fn(async () => actor));
+  app.decorate("requireUserOrScope", vi.fn(async () => routeActor));
+  app.decorate("requireAuth", vi.fn(async () => routeActor));
+  app.decorate("requireScope", vi.fn(async () => routeActor));
   return app;
 }
 
@@ -45,7 +47,7 @@ describe("nodesRoutes", () => {
     const updatedNode = { ...node, name: "new-name", givenName: "new-name" };
     const prisma = {
       node: {
-        findUniqueOrThrow: vi.fn(async () => node),
+        findFirst: vi.fn(async () => node),
         update: vi.fn(async () => updatedNode)
       }
     };
@@ -73,6 +75,65 @@ describe("nodesRoutes", () => {
     await app.close();
   });
 
+  it("returns a clear 404 when renaming a missing node", async () => {
+    const prisma = {
+      node: {
+        findFirst: vi.fn(async () => null),
+        update: vi.fn()
+      }
+    };
+    const headscale = {
+      renameNode: vi.fn(async () => undefined)
+    };
+    const app = buildRouteApp(prisma, headscale);
+    await app.register(nodesRoutes);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/nodes/missing-node/name",
+      payload: { name: "new-name" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "request_error", message: "Node not found" });
+    expect(headscale.renameNode).not.toHaveBeenCalled();
+    expect(prisma.node.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("returns a clear 403 when renaming someone else's node", async () => {
+    const node = {
+      id: "node-1",
+      headscaleNodeId: "hs-1",
+      ownerUserId: "user-2"
+    };
+    const prisma = {
+      node: {
+        findFirst: vi.fn(async () => node),
+        update: vi.fn()
+      }
+    };
+    const headscale = {
+      renameNode: vi.fn(async () => undefined)
+    };
+    const app = buildRouteApp(prisma, headscale);
+    await app.register(nodesRoutes);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/nodes/node-1/name",
+      payload: { name: "new-name" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: "request_error", message: "You do not have permission to manage this node" });
+    expect(headscale.renameNode).not.toHaveBeenCalled();
+    expect(prisma.node.update).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("revokes active shares when deleting a node", async () => {
     const node = {
       id: "node-1",
@@ -81,7 +142,7 @@ describe("nodesRoutes", () => {
     };
     const prisma = {
       node: {
-        findUniqueOrThrow: vi.fn(async () => node),
+        findFirst: vi.fn(async () => node),
         update: vi.fn(async () => ({ ...node, deletedAt: new Date() }))
       },
       nodeShare: {

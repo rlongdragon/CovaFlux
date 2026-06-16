@@ -9,6 +9,10 @@ function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>
   return actor.type === "user" && (actor.role === "admin" || actor.id === nodeOwnerUserId);
 }
 
+function requestError(message: string, statusCode: number) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
 export async function nodesRoutes(app: FastifyInstance) {
   app.get("/nodes", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
@@ -29,11 +33,12 @@ export async function nodesRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get("/nodes/:id", async (request, reply) => {
+  app.get("/nodes/:id", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id }, include: { owner: { select: { id: true, username: true } } } });
-    if (actor.type === "user" && actor.role !== "admin" && node.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
+    const node = await app.prisma.node.findFirst({ where: { id, deletedAt: null }, include: { owner: { select: { id: true, username: true } } } });
+    if (!node) throw requestError("Node not found", 404);
+    if (actor.type === "user" && actor.role !== "admin" && node.ownerUserId !== actor.id) throw requestError("You do not have permission to access this node", 403);
     return node;
   });
 
@@ -46,7 +51,8 @@ export async function nodesRoutes(app: FastifyInstance) {
       Object.assign(error, { statusCode: 400 });
       throw error;
     }
-    const user = await app.prisma.user.findUniqueOrThrow({ where: { id: targetUserId } });
+    const user = await app.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!user || user.disabledAt) throw requestError("Target user not found", 404);
     const expiresAt = new Date(Date.now() + input.expiresInHours * 60 * 60 * 1000);
     const key = await app.headscale.createPreAuthKey({
       userName: user.headscaleUserName,
@@ -76,22 +82,24 @@ export async function nodesRoutes(app: FastifyInstance) {
     return { count: result.count, staleDeleted: result.staleDeleted, policyApplied: Boolean(policyVersion), nodes: result.nodes };
   });
 
-  app.post("/nodes/:id/expire", async (request, reply) => {
+  app.post("/nodes/:id/expire", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+    const node = await app.prisma.node.findFirst({ where: { id, deletedAt: null } });
+    if (!node) throw requestError("Node not found", 404);
+    if (!canManageNode(actor, node.ownerUserId)) throw requestError("You do not have permission to manage this node", 403);
     await app.headscale.expireNode(node.headscaleNodeId);
     await audit(app.prisma, actor, "node.expired", "node", id);
     return { ok: true };
   });
 
-  app.patch("/nodes/:id/name", async (request, reply) => {
+  app.patch("/nodes/:id/name", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
     const input = renameNodeSchema.parse(request.body);
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+    const node = await app.prisma.node.findFirst({ where: { id, deletedAt: null } });
+    if (!node) throw requestError("Node not found", 404);
+    if (!canManageNode(actor, node.ownerUserId)) throw requestError("You do not have permission to manage this node", 403);
 
     await app.headscale.renameNode(node.headscaleNodeId, input.name);
     const updated = await app.prisma.node.update({
@@ -104,11 +112,12 @@ export async function nodesRoutes(app: FastifyInstance) {
     return updated;
   });
 
-  app.delete("/nodes/:id", async (request, reply) => {
+  app.delete("/nodes/:id", async (request) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+    const node = await app.prisma.node.findFirst({ where: { id, deletedAt: null } });
+    if (!node) throw requestError("Node not found", 404);
+    if (!canManageNode(actor, node.ownerUserId)) throw requestError("You do not have permission to manage this node", 403);
     await app.headscale.deleteNode(node.headscaleNodeId);
     const deletedAt = new Date();
     await app.prisma.node.update({ where: { id }, data: { deletedAt } });
