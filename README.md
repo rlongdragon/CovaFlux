@@ -6,6 +6,12 @@ CovaFlux is a lightweight management API and development web console for Headsca
 
 It supports both a mock Headscale client and a real Headscale REST API client. The development default is the mock client. When `HEADSCALE_CLIENT_MODE=rest` and `HEADSCALE_API_KEY` are configured, user management, pre-auth key creation, node synchronization, and policy application are performed against a real Headscale instance.
 
+## Features
+
+- Manage users, groups, nodes, shares, API tokens, audit logs, and Headscale policy from the web console.
+- Expire, delete, and sync nodes.
+- Deleted nodes are hidden from share lists and their active shares are revoked.
+
 ## Development
 
 ```bash

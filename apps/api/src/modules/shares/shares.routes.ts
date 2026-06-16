@@ -16,13 +16,14 @@ export async function sharesRoutes(app: FastifyInstance) {
     const actor = await app.requireUserOrScope(request, "shares:read");
     const where = actor.type === "user" && actor.role !== "admin"
       ? {
+          node: { deletedAt: null },
           OR: [
             { sharedByUserId: actor.id },
             { targetUserId: actor.id },
             { targetGroup: { members: { some: { userId: actor.id } } } }
           ]
         }
-      : {};
+      : { node: { deletedAt: null } };
     return app.prisma.nodeShare.findMany({
       where,
       include: {

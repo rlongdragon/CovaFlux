@@ -1,8 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { generatePolicy } from "./policy.generator.js";
 
 describe("generatePolicy", () => {
   it("generates deterministic whole-node ACL rules", async () => {
+    const findNodes = vi.fn(async () => [
+      {
+        headscaleNodeId: "1",
+        name: "alice-node",
+        givenName: "alice-node",
+        owner: { username: "alice" },
+        shares: [
+          {
+            targetUser: { username: "bob", disabledAt: null },
+            targetGroup: null
+          }
+        ]
+      }
+    ]);
     const prisma = {
       user: {
         findMany: async () => [
@@ -11,20 +25,7 @@ describe("generatePolicy", () => {
         ]
       },
       node: {
-        findMany: async () => [
-          {
-            headscaleNodeId: "1",
-            name: "alice-node",
-            givenName: "alice-node",
-            owner: { username: "alice" },
-            shares: [
-              {
-                targetUser: { username: "bob", disabledAt: null },
-                targetGroup: null
-              }
-            ]
-          }
-        ]
+        findMany: findNodes
       }
     } as never;
 
@@ -51,5 +52,14 @@ describe("generatePolicy", () => {
         { action: "accept", src: ["bob@"], dst: ["alice-node:*"] }
       ]
     });
+
+    expect(findNodes).toHaveBeenCalledWith(expect.objectContaining({
+      where: { deletedAt: null },
+      include: expect.objectContaining({
+        shares: expect.objectContaining({
+          where: expect.objectContaining({ revokedAt: null })
+        })
+      })
+    }));
   });
 });

@@ -92,8 +92,11 @@ export async function nodesRoutes(app: FastifyInstance) {
     const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
     if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
     await app.headscale.deleteNode(node.headscaleNodeId);
-    await app.prisma.node.update({ where: { id }, data: { deletedAt: new Date() } });
+    const deletedAt = new Date();
+    await app.prisma.node.update({ where: { id }, data: { deletedAt } });
+    await app.prisma.nodeShare.updateMany({ where: { nodeId: id, revokedAt: null }, data: { revokedAt: deletedAt } });
     await audit(app.prisma, actor, "node.deleted", "node", id);
+    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return { ok: true };
   });
 

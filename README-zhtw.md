@@ -6,6 +6,12 @@ CovaFlux 是 Headscale 的輕量管理 API 與開發測試前台。
 
 系統支援 mock client 與 Headscale REST API client。開發時預設使用 mock；設定 `HEADSCALE_CLIENT_MODE=rest` 與 `HEADSCALE_API_KEY` 後，使用者、pre-auth key、節點同步與 policy apply 會打到真正的 Headscale。
 
+## 功能
+
+- 從 web console 管理使用者、群組、節點、分享、API token、audit log 與 Headscale policy。
+- 支援節點 expire、刪除與同步。
+- 已刪除節點不會出現在分享清單，且 active share 會一併撤銷。
+
 ## 開發
 
 ```bash
