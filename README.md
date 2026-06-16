@@ -9,7 +9,7 @@ It supports both a mock Headscale client and a real Headscale REST API client. T
 ## Features
 
 - Manage users, groups, nodes, shares, API tokens, audit logs, and Headscale policy from the web console.
-- Expire, delete, and sync nodes.
+- Rename, expire, delete, and sync nodes.
 - Deleted nodes are hidden from share lists and their active shares are revoked.
 
 ## Development

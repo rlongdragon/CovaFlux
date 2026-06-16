@@ -53,6 +53,7 @@ export interface HeadscaleClient {
   deleteUser(userName: string): Promise<void>;
   createPreAuthKey(input: CreatePreAuthKeyInput): Promise<HeadscalePreAuthKey>;
   listNodes(): Promise<HeadscaleNode[]>;
+  renameNode(nodeId: string, name: string): Promise<void>;
   expireNode(nodeId: string): Promise<void>;
   deleteNode(nodeId: string): Promise<void>;
   getPolicy(): Promise<HeadscalePolicy>;

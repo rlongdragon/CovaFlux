@@ -55,6 +55,10 @@ export const registerKeySchema = z.object({
   expiresInHours: z.number().int().positive().max(24 * 30).default(24)
 });
 
+export const renameNodeSchema = z.object({
+  name: z.string().min(1).max(63).regex(/^[a-zA-Z0-9_.-]+$/)
+});
+
 export const shareToUserSchema = z.object({
   targetUserId: z.string().min(1),
   allowExitNode: z.boolean().default(false),
@@ -83,6 +87,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type RegisterKeyInput = z.infer<typeof registerKeySchema>;
+export type RenameNodeInput = z.infer<typeof renameNodeSchema>;
 export type ShareToUserInput = z.infer<typeof shareToUserSchema>;
 export type ShareToGroupInput = z.infer<typeof shareToGroupSchema>;
 export type CreateInviteInput = z.infer<typeof createInviteSchema>;

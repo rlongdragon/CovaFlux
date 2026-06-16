@@ -9,7 +9,7 @@ CovaFlux 是 Headscale 的輕量管理 API 與開發測試前台。
 ## 功能
 
 - 從 web console 管理使用者、群組、節點、分享、API token、audit log 與 Headscale policy。
-- 支援節點 expire、刪除與同步。
+- 支援節點改名、expire、刪除與同步。
 - 已刪除節點不會出現在分享清單，且 active share 會一併撤銷。
 
 ## 開發

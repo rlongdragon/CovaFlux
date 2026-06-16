@@ -60,6 +60,11 @@ export class MockHeadscaleClient implements HeadscaleClient {
     return [...this.nodes.values()];
   }
 
+  async renameNode(nodeId: string, name: string) {
+    const node = this.nodes.get(nodeId);
+    if (node) this.nodes.set(nodeId, { ...node, name, givenName: name });
+  }
+
   async expireNode(nodeId: string) {
     const node = this.nodes.get(nodeId);
     if (node) this.nodes.set(nodeId, { ...node, online: false, expired: true, expiresAt: new Date(0), lastSeenAt: new Date() });

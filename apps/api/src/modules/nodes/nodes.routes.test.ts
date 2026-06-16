@@ -34,6 +34,45 @@ describe("nodesRoutes", () => {
     vi.clearAllMocks();
   });
 
+  it("renames an owned node in Headscale and updates the local record", async () => {
+    const node = {
+      id: "node-1",
+      headscaleNodeId: "hs-1",
+      ownerUserId: "user-1",
+      name: "old-name",
+      givenName: "old-name"
+    };
+    const updatedNode = { ...node, name: "new-name", givenName: "new-name" };
+    const prisma = {
+      node: {
+        findUniqueOrThrow: vi.fn(async () => node),
+        update: vi.fn(async () => updatedNode)
+      }
+    };
+    const headscale = {
+      renameNode: vi.fn(async () => undefined)
+    };
+    const app = buildRouteApp(prisma, headscale);
+    await app.register(nodesRoutes);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/nodes/node-1/name",
+      payload: { name: "new-name" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: "node-1", name: "new-name", givenName: "new-name" });
+    expect(headscale.renameNode).toHaveBeenCalledWith("hs-1", "new-name");
+    expect(prisma.node.update).toHaveBeenCalledWith({
+      where: { id: "node-1" },
+      data: { name: "new-name", givenName: "new-name", driftStatus: "managed" },
+      include: { owner: { select: { id: true, username: true } } }
+    });
+
+    await app.close();
+  });
+
   it("revokes active shares when deleting a node", async () => {
     const node = {
       id: "node-1",

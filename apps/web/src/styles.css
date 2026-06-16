@@ -192,10 +192,10 @@ label {
 
 .node-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) 82px minmax(130px, 1fr) minmax(78px, 0.7fr) minmax(116px, 0.8fr) 142px;
+  grid-template-columns: minmax(150px, 1.2fr) 82px minmax(130px, 1fr) minmax(78px, 0.7fr) minmax(116px, 0.8fr) 226px;
   gap: 10px;
   align-items: center;
-  min-width: 780px;
+  min-width: 864px;
   margin-bottom: 8px;
   padding: 9px 10px;
   border: 1px solid #d7dfe2;

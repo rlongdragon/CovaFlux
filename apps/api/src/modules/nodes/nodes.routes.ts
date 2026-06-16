@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { registerKeySchema } from "@covaflux/shared";
+import { registerKeySchema, renameNodeSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashLookupToken } from "../../utils/secrets.js";
 import { applyCurrentPolicy } from "../policy/policy.service.js";
@@ -84,6 +84,24 @@ export async function nodesRoutes(app: FastifyInstance) {
     await app.headscale.expireNode(node.headscaleNodeId);
     await audit(app.prisma, actor, "node.expired", "node", id);
     return { ok: true };
+  });
+
+  app.patch("/nodes/:id/name", async (request, reply) => {
+    const actor = await app.requireUserOrScope(request, "nodes:write");
+    const { id } = request.params as { id: string };
+    const input = renameNodeSchema.parse(request.body);
+    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+
+    await app.headscale.renameNode(node.headscaleNodeId, input.name);
+    const updated = await app.prisma.node.update({
+      where: { id },
+      data: { name: input.name, givenName: input.name, driftStatus: "managed" },
+      include: { owner: { select: { id: true, username: true } } }
+    });
+    await audit(app.prisma, actor, "node.renamed", "node", id, { name: input.name });
+    await applyCurrentPolicy(app.prisma, app.headscale, actor);
+    return updated;
   });
 
   app.delete("/nodes/:id", async (request, reply) => {

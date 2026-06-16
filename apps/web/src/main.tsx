@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Clipboard, KeyRound, Power, RefreshCw, Shield, Trash2, Users, Workflow } from "lucide-react";
+import { Clipboard, KeyRound, Pencil, Power, RefreshCw, Shield, Trash2, Users, Workflow } from "lucide-react";
 import "./styles.css";
 
 const API_BASE =
@@ -239,6 +239,15 @@ function App() {
     await syncNodes();
   }
 
+  async function renameNode(nodeId: string, name: string) {
+    await api(`/nodes/${nodeId}/name`, {
+      method: "PATCH",
+      body: JSON.stringify({ name })
+    });
+    setStatus("節點名稱已更新");
+    await loadAll();
+  }
+
   async function deleteNode(nodeId: string) {
     if (!window.confirm("確定要從 Headscale 刪除這個節點？")) return;
     await api(`/nodes/${nodeId}`, { method: "DELETE" });
@@ -323,7 +332,7 @@ function App() {
               <CommandLine label="Exit node" command={tailscaleExitNodeCommand} onCopy={copyCommand} />
             </div>
           )}
-          <NodeList nodes={nodes} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
+          <NodeList nodes={nodes} onRename={renameNode} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
         </Panel>
 
         <Panel title="Groups" icon={<Users size={18} />}>
@@ -417,11 +426,13 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 
 function NodeList({
   nodes,
+  onRename,
   onExpire,
   onDelete,
   onError
 }: {
   nodes: NodeItem[];
+  onRename: (nodeId: string, name: string) => Promise<void>;
   onExpire: (nodeId: string) => Promise<void>;
   onDelete: (nodeId: string) => Promise<void>;
   onError: (message: string) => void;
@@ -454,6 +465,17 @@ function NodeList({
             <span>{node.owner?.username ?? node.ownerUserId ?? "-"}</span>
             <span>{formatDate(node.lastSeenAt)}</span>
             <div className="node-actions">
+              <button
+                onClick={() => {
+                  const currentName = node.givenName ?? node.name;
+                  const nextName = window.prompt("輸入新的節點名稱", currentName)?.trim();
+                  if (!nextName || nextName === currentName) return;
+                  onRename(node.id, nextName).catch((error) => onError(error.message));
+                }}
+                title="Rename node"
+              >
+                <Pencil size={15} /> Rename
+              </button>
               <button
                 disabled={node.expired}
                 onClick={() => onExpire(node.id).catch((error) => onError(error.message))}

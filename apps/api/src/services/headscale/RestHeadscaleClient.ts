@@ -121,6 +121,10 @@ export class RestHeadscaleClient implements HeadscaleClient {
     await this.request(`/api/v1/node/${encodeURIComponent(nodeId)}/expire`, { method: "POST" });
   }
 
+  async renameNode(nodeId: string, name: string) {
+    await this.request(`/api/v1/node/${encodeURIComponent(nodeId)}/rename/${encodeURIComponent(name)}`, { method: "POST" });
+  }
+
   async deleteNode(nodeId: string) {
     await this.request(`/api/v1/node/${encodeURIComponent(nodeId)}`, { method: "DELETE" });
   }
