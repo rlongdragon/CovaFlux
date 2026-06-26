@@ -16,6 +16,7 @@ import { policyRoutes } from "./modules/policy/policy.routes.js";
 import { apiTokensRoutes } from "./modules/api-tokens/api-tokens.routes.js";
 import { auditLogsRoutes } from "./modules/audit-logs/audit-logs.routes.js";
 import { bootstrapAdmin } from "./modules/users/users.service.js";
+import { startPolicyReconciler } from "./modules/policy/policyReconciler.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -63,6 +64,20 @@ export async function buildApp() {
 
   app.addHook("onReady", async () => {
     await bootstrapAdmin(app.prisma, app.headscale);
+
+    if (env.POLICY_RECONCILE_INTERVAL_MS > 0) {
+      const reconciler = startPolicyReconciler(app.prisma, app.headscale, {
+        intervalMs: env.POLICY_RECONCILE_INTERVAL_MS,
+        logger: app.log
+      });
+      app.addHook("onClose", async () => {
+        reconciler.stop();
+      });
+      app.log.info(
+        { intervalMs: env.POLICY_RECONCILE_INTERVAL_MS },
+        "policy reconciler started"
+      );
+    }
   });
 
   return app;
