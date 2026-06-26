@@ -108,6 +108,7 @@ export async function nodesRoutes(app: FastifyInstance) {
     const body = request.body as { ownerUserId: string };
     const node = await app.prisma.node.update({ where: { id }, data: { ownerUserId: body.ownerUserId, driftStatus: "managed" } });
     await audit(app.prisma, actor, "node.owner_changed", "node", id, { ownerUserId: body.ownerUserId });
+    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return node;
   });
 }
