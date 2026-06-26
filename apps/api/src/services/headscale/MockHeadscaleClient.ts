@@ -13,6 +13,7 @@ export class MockHeadscaleClient implements HeadscaleClient {
   private users = new Map<string, HeadscaleUser>();
   private nodes = new Map<string, HeadscaleNode>();
   private policy: HeadscalePolicy = { acls: [] };
+  private ipCounter = 10;
 
   async health() {
     return;
@@ -45,7 +46,7 @@ export class MockHeadscaleClient implements HeadscaleClient {
       givenName: nodeName,
       machineKey: createOpaqueToken("mkey"),
       nodeKey: createOpaqueToken("nodekey"),
-      ipAddresses: [],
+      ipAddresses: [`100.64.0.${this.ipCounter++}`],
       advertisedRoutes: [],
       isExitNode: false,
       online: true,

@@ -26,27 +26,53 @@ describe("isPolicyWrite", () => {
 });
 
 describe("policy dirty tracking", () => {
-  it("marks dirty inside a context", () => {
-    enterPolicyContext(createPolicyStore());
-    expect(isPolicyDirty()).toBe(false);
-    markPolicyDirty();
-    expect(isPolicyDirty()).toBe(true);
+  // Each test runs in its own async task; enterPolicyContext(enterWith) binds a
+  // fresh store to that task's context, so state does not bleed between tests.
+
+  it("marks dirty inside a context", async () => {
+    await new Promise<void>((resolve) => {
+      const store = createPolicyStore();
+      enterPolicyContext(store);
+      expect(isPolicyDirty()).toBe(false);
+      markPolicyDirty();
+      expect(isPolicyDirty()).toBe(true);
+      expect(store.dirty).toBe(true);
+      resolve();
+    });
   });
 
   it("suppresses marking inside runSuppressed", async () => {
-    enterPolicyContext(createPolicyStore());
+    const store = createPolicyStore();
+    enterPolicyContext(store);
     await runSuppressed(async () => {
       markPolicyDirty();
     });
-    expect(isPolicyDirty()).toBe(false);
+    expect(store.dirty).toBe(false);
   });
 
   it("restores marking after runSuppressed completes", async () => {
-    enterPolicyContext(createPolicyStore());
+    const store = createPolicyStore();
+    enterPolicyContext(store);
     await runSuppressed(async () => {
       markPolicyDirty();
     });
     markPolicyDirty();
-    expect(isPolicyDirty()).toBe(true);
+    expect(store.dirty).toBe(true);
+  });
+
+  it("a fresh store starts clean even after a prior suppressed run", async () => {
+    const first = createPolicyStore();
+    enterPolicyContext(first);
+    await runSuppressed(async () => {
+      markPolicyDirty();
+    });
+    expect(first.dirty).toBe(false);
+
+    // Binding a new store resets suppression state for subsequent marks.
+    const second = createPolicyStore();
+    enterPolicyContext(second);
+    markPolicyDirty();
+    expect(second.dirty).toBe(true);
+    expect(first.dirty).toBe(false);
   });
 });

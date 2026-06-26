@@ -27,7 +27,13 @@ export function createPolicyStore(): PolicyTrackingStore {
   return { dirty: false, suppressDepth: 0 };
 }
 
-/** Bind a store to the current async context for the rest of the request. */
+/**
+ * Bind a store to the current async context for the rest of the request.
+ * enterWith (not run) is required: Fastify invokes the route handler as a
+ * continuation of the onRequest async context, so enterWith makes getStore()
+ * resolve to this request's store throughout the handler. Each request calls
+ * enterWith with a FRESH store, so suppressDepth never carries over.
+ */
 export function enterPolicyContext(store: PolicyTrackingStore): void {
   storage.enterWith(store);
 }

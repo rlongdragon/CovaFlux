@@ -7,6 +7,10 @@ import {
 } from "./policyTracking.js";
 
 declare module "fastify" {
+  interface FastifyInstance {
+    /** Number of times the auto-apply hook decided to reapply policy. Test/diagnostic aid. */
+    policyAutoApplyCount: number;
+  }
   interface FastifyRequest {
     policyStore?: PolicyTrackingStore;
   }
@@ -15,13 +19,14 @@ declare module "fastify" {
 /**
  * Automatic policy reapply.
  *
- * onRequest:  create a per-request policy-dirty store, bind it to the async
- *             context (so the Prisma extension's markPolicyDirty finds it during
- *             the handler) AND stash it on the request.
- * onResponse: read the dirty flag from request.policyStore — NOT via the async
- *             store. onResponse runs in a detached async context where
- *             AsyncLocalStorage.getStore() is undefined, so we must read the
- *             concrete store object we kept a reference to on the request.
+ * onRequest:  create a per-request policy-dirty store, stash it on the request,
+ *             and bind it to the async context with enterWith so the Prisma
+ *             extension's markPolicyDirty finds THIS request's store throughout
+ *             the handler. A fresh store per request means suppressDepth never
+ *             bleeds into the next request.
+ * onResponse: read the dirty flag from request.policyStore — onResponse runs in
+ *             a detached async context where getStore() is undefined, so we read
+ *             the concrete object we kept on the request.
  *
  * Routes no longer call applyCurrentPolicy() for DB-driven ACL changes — the
  * data layer drives it. The background reconciler remains the safety net for
@@ -29,6 +34,8 @@ declare module "fastify" {
  */
 export const registerPolicyAutoApply = fp(
   async (app) => {
+    app.decorate("policyAutoApplyCount", 0);
+
     app.addHook("onRequest", async (request) => {
       const store = createPolicyStore();
       request.policyStore = store;
@@ -39,6 +46,11 @@ export const registerPolicyAutoApply = fp(
       // Only reapply for successful, mutating responses.
       if (reply.statusCode >= 400) return;
       if (!request.policyStore?.dirty) return;
+
+      // The mechanism decided this request touched policy state. Count it even
+      // if onlyIfChanged later dedups to a no-op — this is the signal that the
+      // route correctly triggered an automatic reapply.
+      app.policyAutoApplyCount += 1;
 
       try {
         await applyCurrentPolicy(app.prisma, app.headscale, request.actor, {
