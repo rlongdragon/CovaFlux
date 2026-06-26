@@ -3,6 +3,7 @@ import { registerKeySchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashLookupToken } from "../../utils/secrets.js";
 import { applyCurrentPolicy } from "../policy/policy.service.js";
+import { markPolicyDirty } from "../../plugins/policyTracking.js";
 import { syncHeadscaleNodes } from "./nodeSync.service.js";
 
 function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeOwnerUserId?: string | null) {
@@ -83,7 +84,9 @@ export async function nodesRoutes(app: FastifyInstance) {
     if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
     await app.headscale.expireNode(node.headscaleNodeId);
     await audit(app.prisma, actor, "node.expired", "node", id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
+    // Headscale-only change (no tracked DB write) — mark dirty so the
+    // onResponse hook reapplies policy and drops the expired node from peers.
+    markPolicyDirty();
     return { ok: true };
   });
 
@@ -95,7 +98,6 @@ export async function nodesRoutes(app: FastifyInstance) {
     await app.headscale.deleteNode(node.headscaleNodeId);
     await app.prisma.node.update({ where: { id }, data: { deletedAt: new Date() } });
     await audit(app.prisma, actor, "node.deleted", "node", id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return { ok: true };
   });
 
@@ -110,7 +112,6 @@ export async function nodesRoutes(app: FastifyInstance) {
     const body = request.body as { ownerUserId: string };
     const node = await app.prisma.node.update({ where: { id }, data: { ownerUserId: body.ownerUserId, driftStatus: "managed" } });
     await audit(app.prisma, actor, "node.owner_changed", "node", id, { ownerUserId: body.ownerUserId });
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return node;
   });
 }

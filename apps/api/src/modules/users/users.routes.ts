@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { createUserSchema, updateUserSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashSecret } from "../../utils/secrets.js";
-import { applyCurrentPolicy } from "../policy/policy.service.js";
 
 export async function usersRoutes(app: FastifyInstance) {
   app.get("/users", async (request) => {
@@ -35,7 +34,6 @@ export async function usersRoutes(app: FastifyInstance) {
       select: { id: true, username: true, role: true, headscaleUserName: true, disabledAt: true, createdAt: true }
     });
     await audit(app.prisma, actor, "user.created", "user", user.id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return user;
   });
 
@@ -62,7 +60,6 @@ export async function usersRoutes(app: FastifyInstance) {
       select: { id: true, username: true, role: true, disabledAt: true, updatedAt: true }
     });
     await audit(app.prisma, actor, "user.updated", "user", id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return user;
   });
 
@@ -71,7 +68,6 @@ export async function usersRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const user = await app.prisma.user.update({ where: { id }, data: { disabledAt: new Date() } });
     await audit(app.prisma, actor, "user.disabled", "user", id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor, { onlyIfChanged: true });
     return { ok: true, id: user.id };
   });
 }

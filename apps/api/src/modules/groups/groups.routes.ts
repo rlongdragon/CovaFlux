@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { addGroupMemberSchema, createGroupSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
-import { applyCurrentPolicy } from "../policy/policy.service.js";
 
 export async function groupsRoutes(app: FastifyInstance) {
   app.get("/groups", async (request) => {
@@ -36,7 +35,6 @@ export async function groupsRoutes(app: FastifyInstance) {
     if (actor.role !== "admin" && group.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
     const member = await app.prisma.groupMember.create({ data: { groupId: id, userId: input.userId, addedByUserId: actor.id } });
     await audit(app.prisma, actor, "group.member_added", "group", id, { userId: input.userId });
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return member;
   });
 
@@ -48,7 +46,6 @@ export async function groupsRoutes(app: FastifyInstance) {
     if (actor.role !== "admin" && group.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
     await app.prisma.groupMember.delete({ where: { groupId_userId: { groupId: id, userId } } });
     await audit(app.prisma, actor, "group.member_removed", "group", id, { userId });
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return { ok: true };
   });
 }

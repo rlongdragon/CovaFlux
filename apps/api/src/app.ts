@@ -6,6 +6,7 @@ import { registerAuthPlugin } from "./plugins/auth.js";
 import { registerDbPlugin } from "./plugins/db.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerHeadscalePlugin } from "./plugins/headscale.js";
+import { registerPolicyAutoApply } from "./plugins/policyAutoApply.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { usersRoutes } from "./modules/users/users.routes.js";
 import { nodesRoutes } from "./modules/nodes/nodes.routes.js";
@@ -49,6 +50,7 @@ export async function buildApp() {
   await app.register(registerDbPlugin);
   await app.register(registerHeadscalePlugin);
   await app.register(registerAuthPlugin);
+  await app.register(registerPolicyAutoApply);
 
   app.get("/health", async () => ({ ok: true }));
 
