@@ -12,7 +12,11 @@ const envSchema = z.object({
   HEADSCALE_CLIENT_MODE: z.enum(["mock", "rest"]).default("mock"),
   HEADSCALE_BASE_URL: z.string().default("http://headscale:8080"),
   HEADSCALE_API_KEY: z.string().optional(),
-  HEADSCALE_API_KEY_FILE: z.string().optional()
+  HEADSCALE_API_KEY_FILE: z.string().optional(),
+  // Background policy reconcile interval (ms). Set to 0 to disable the loop.
+  // Default 30s: covers nodes that join via pre-auth key, since Headscale does
+  // not notify CovaFlux when a node registers.
+  POLICY_RECONCILE_INTERVAL_MS: z.coerce.number().int().min(0).default(30000)
 });
 
 const parsedEnv = envSchema.parse(process.env);

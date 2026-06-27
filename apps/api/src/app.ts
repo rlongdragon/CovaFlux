@@ -6,6 +6,7 @@ import { registerAuthPlugin } from "./plugins/auth.js";
 import { registerDbPlugin } from "./plugins/db.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerHeadscalePlugin } from "./plugins/headscale.js";
+import { registerPolicyAutoApply } from "./plugins/policyAutoApply.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { usersRoutes } from "./modules/users/users.routes.js";
 import { nodesRoutes } from "./modules/nodes/nodes.routes.js";
@@ -16,6 +17,7 @@ import { policyRoutes } from "./modules/policy/policy.routes.js";
 import { apiTokensRoutes } from "./modules/api-tokens/api-tokens.routes.js";
 import { auditLogsRoutes } from "./modules/audit-logs/audit-logs.routes.js";
 import { bootstrapAdmin } from "./modules/users/users.service.js";
+import { startPolicyReconciler } from "./modules/policy/policyReconciler.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -48,6 +50,7 @@ export async function buildApp() {
   await app.register(registerDbPlugin);
   await app.register(registerHeadscalePlugin);
   await app.register(registerAuthPlugin);
+  await app.register(registerPolicyAutoApply);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -63,6 +66,20 @@ export async function buildApp() {
 
   app.addHook("onReady", async () => {
     await bootstrapAdmin(app.prisma, app.headscale);
+
+    if (env.POLICY_RECONCILE_INTERVAL_MS > 0) {
+      const reconciler = startPolicyReconciler(app.prisma, app.headscale, {
+        intervalMs: env.POLICY_RECONCILE_INTERVAL_MS,
+        logger: app.log
+      });
+      app.addHook("onClose", async () => {
+        reconciler.stop();
+      });
+      app.log.info(
+        { intervalMs: env.POLICY_RECONCILE_INTERVAL_MS },
+        "policy reconciler started"
+      );
+    }
   });
 
   return app;

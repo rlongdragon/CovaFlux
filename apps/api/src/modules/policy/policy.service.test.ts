@@ -56,7 +56,7 @@ describe("applyCurrentPolicy", () => {
   it("skips applying when onlyIfChanged sees the same policy", async () => {
     const prisma = createPrismaMock();
     const headscale = createHeadscaleMock({
-      acls: [{ action: "accept", src: ["alice@"], dst: ["alice-node:*"] }],
+      acls: [{ action: "accept", src: ["alice@"], dst: ["alice-node:*", "alice@:*"] }],
       groups: { "group:alice": ["alice@"] },
       hosts: { "alice-node": "100.64.0.10" }
     });
@@ -74,7 +74,7 @@ describe("applyCurrentPolicy", () => {
       version: 1
     });
     expect(headscale.applyPolicy).toHaveBeenCalledWith({
-      acls: [{ action: "accept", src: ["alice@"], dst: ["alice-node:*"] }],
+      acls: [{ action: "accept", src: ["alice@"], dst: ["alice-node:*", "alice@:*"] }],
       groups: { "group:alice": ["alice@"] },
       hosts: { "alice-node": "100.64.0.10" }
     });

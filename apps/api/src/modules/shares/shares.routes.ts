@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { shareToGroupSchema, shareToUserSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
-import { applyCurrentPolicy } from "../policy/policy.service.js";
 
 async function requireNodeOwner(app: FastifyInstance, actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeId: string) {
   const node = await app.prisma.node.findUniqueOrThrow({ where: { id: nodeId } });
@@ -50,7 +49,6 @@ export async function sharesRoutes(app: FastifyInstance) {
       }
     });
     await audit(app.prisma, actor, "share.created_user", "share", share.id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return share;
   });
 
@@ -69,7 +67,6 @@ export async function sharesRoutes(app: FastifyInstance) {
       }
     });
     await audit(app.prisma, actor, "share.created_group", "share", share.id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return share;
   });
 
@@ -82,7 +79,6 @@ export async function sharesRoutes(app: FastifyInstance) {
     }
     await app.prisma.nodeShare.update({ where: { id }, data: { revokedAt: new Date() } });
     await audit(app.prisma, actor, "share.revoked", "share", id);
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return { ok: true };
   });
 }

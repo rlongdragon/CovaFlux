@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { createInviteSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { createOpaqueToken, hashLookupToken } from "../../utils/secrets.js";
-import { applyCurrentPolicy } from "../policy/policy.service.js";
 
 export async function invitesRoutes(app: FastifyInstance) {
   app.post("/nodes/:id/invites", async (request, reply) => {
@@ -50,7 +49,6 @@ export async function invitesRoutes(app: FastifyInstance) {
     });
     await app.prisma.inviteLink.update({ where: { id: invite.id }, data: { usedCount: { increment: 1 } } });
     await audit(app.prisma, actor, "invite.accepted", "invite", invite.id, { shareId: share.id });
-    await applyCurrentPolicy(app.prisma, app.headscale, actor);
     return share;
   });
 

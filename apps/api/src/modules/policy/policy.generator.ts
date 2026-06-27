@@ -57,6 +57,15 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
     }
   }
 
+  // Baseline self-access: allow every active user's devices to reach their own
+  // devices. Headscale expands "user@" against live node ownership, so this
+  // covers a freshly-joined node immediately — before CovaFlux has synced it
+  // into its own database. Without this, a new userspace-networking node drops
+  // inbound TCP ("no rules matched") until an unrelated action reapplies policy.
+  for (const user of users) {
+    addAcl(`${user.username}@`, `${user.username}@:*`);
+  }
+
   const acls = [...aclMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([src, dstSet]) => ({

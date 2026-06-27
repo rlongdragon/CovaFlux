@@ -3,6 +3,7 @@ import { registerKeySchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
 import { hashLookupToken } from "../../utils/secrets.js";
 import { applyCurrentPolicy } from "../policy/policy.service.js";
+import { markPolicyDirty } from "../../plugins/policyTracking.js";
 import { syncHeadscaleNodes } from "./nodeSync.service.js";
 
 function canManageNode(actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeOwnerUserId?: string | null) {
@@ -83,6 +84,9 @@ export async function nodesRoutes(app: FastifyInstance) {
     if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
     await app.headscale.expireNode(node.headscaleNodeId);
     await audit(app.prisma, actor, "node.expired", "node", id);
+    // Headscale-only change (no tracked DB write) — mark dirty so the
+    // onResponse hook reapplies policy and drops the expired node from peers.
+    markPolicyDirty();
     return { ok: true };
   });
 
