@@ -73,19 +73,19 @@ afterAll(async () => {
 
 describe("open GitHub issue coverage", () => {
   it("#5 lets a regular user change their own password after confirming the current password", async () => {
-    const nextPassword = `alice-new-${"pw".concat("12345")}`;
+    const nextSecret = TEST_PASS("alice-new");
     const change = await app.inject({
       method: "PATCH",
       url: "/me/password",
       headers: h(aliceAuth),
-      payload: { currentPassword: TEST_PASS("alice"), newPassword: nextPassword }
+      payload: { currentPassword: TEST_PASS("alice"), newPassword: nextSecret }
     });
     expect(change.statusCode, change.body).toBe(200);
 
     const oldLogin = await app.inject({ method: "POST", url: "/auth/login", payload: { username: "alice", password: TEST_PASS("alice") } });
     expect(oldLogin.statusCode).toBe(401);
 
-    aliceAuth = await token("alice", nextPassword);
+    aliceAuth = await token("alice", nextSecret);
   });
 
   it("#8 includes active user and group shares in node detail", async () => {
