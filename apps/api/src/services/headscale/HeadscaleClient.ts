@@ -39,6 +39,7 @@ export interface HeadscaleNode {
 export interface HeadscalePolicy {
   hosts?: Record<string, string>;
   groups?: Record<string, string[]>;
+  derpMap?: Record<string, unknown>;
   acls: Array<{
     action: "accept";
     src: string[];

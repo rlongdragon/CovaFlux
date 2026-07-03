@@ -16,6 +16,7 @@ import { invitesRoutes } from "./modules/invites/invites.routes.js";
 import { policyRoutes } from "./modules/policy/policy.routes.js";
 import { apiTokensRoutes } from "./modules/api-tokens/api-tokens.routes.js";
 import { auditLogsRoutes } from "./modules/audit-logs/audit-logs.routes.js";
+import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { bootstrapAdmin } from "./modules/users/users.service.js";
 import { startPolicyReconciler } from "./modules/policy/policyReconciler.js";
 
@@ -61,6 +62,7 @@ export async function buildApp() {
   await app.register(sharesRoutes);
   await app.register(invitesRoutes);
   await app.register(policyRoutes);
+  await app.register(settingsRoutes);
   await app.register(apiTokensRoutes);
   await app.register(auditLogsRoutes);
 

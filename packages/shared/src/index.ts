@@ -15,7 +15,9 @@ export const apiScopeSchema = z.enum([
   "invites:write",
   "policy:read",
   "policy:write",
-  "tokens:write"
+  "tokens:write",
+  "settings:read",
+  "settings:write"
 ]);
 
 export type ApiScope = z.infer<typeof apiScopeSchema>;
@@ -37,6 +39,15 @@ export const updateUserSchema = z.object({
   password: z.string().min(8).optional(),
   role: userRoleSchema.optional(),
   disabled: z.boolean().optional()
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8)
+});
+
+export const derpSettingsSchema = z.object({
+  derpMap: z.record(z.string(), z.unknown()).nullable()
 });
 
 export const createGroupSchema = z.object({
@@ -82,6 +93,8 @@ export const createApiTokenSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type DerpSettingsInput = z.infer<typeof derpSettingsSchema>;
 export type RegisterKeyInput = z.infer<typeof registerKeySchema>;
 export type ShareToUserInput = z.infer<typeof shareToUserSchema>;
 export type ShareToGroupInput = z.infer<typeof shareToGroupSchema>;

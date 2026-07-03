@@ -70,6 +70,31 @@ export async function sharesRoutes(app: FastifyInstance) {
     return share;
   });
 
+  app.post("/shares/:id/leave", async (request, reply) => {
+    const actor = await app.requireAuth(request);
+    if (actor.type !== "user") return reply.status(403).send({ error: "permission_denied" });
+    const { id } = request.params as { id: string };
+    const share = await app.prisma.nodeShare.findUniqueOrThrow({
+      where: { id },
+      include: { targetGroup: { include: { members: true } } }
+    });
+    if (share.revokedAt) return { ok: true };
+
+    if (share.targetUserId === actor.id) {
+      await app.prisma.nodeShare.update({ where: { id }, data: { revokedAt: new Date() } });
+      await audit(app.prisma, actor, "share.left_user", "share", id);
+      return { ok: true, action: "revoked" };
+    }
+
+    if (share.targetGroupId && share.targetGroup?.members.some((member) => member.userId === actor.id)) {
+      await app.prisma.groupMember.delete({ where: { groupId_userId: { groupId: share.targetGroupId, userId: actor.id } } });
+      await audit(app.prisma, actor, "share.left_group", "share", id, { groupId: share.targetGroupId });
+      return { ok: true, action: "group_left" };
+    }
+
+    return reply.status(403).send({ error: "permission_denied" });
+  });
+
   app.delete("/shares/:id", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "shares:write");
     const { id } = request.params as { id: string };

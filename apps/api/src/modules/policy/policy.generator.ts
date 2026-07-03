@@ -4,6 +4,7 @@ import type { HeadscaleNode, HeadscalePolicy } from "../../services/headscale/He
 export async function generatePolicy(prisma: PrismaClient, runtimeNodes: HeadscaleNode[] = []): Promise<HeadscalePolicy> {
   const now = new Date();
   const users = await prisma.user.findMany({ where: { disabledAt: null }, orderBy: { username: "asc" } });
+  const activeUsernames = new Set(users.map((user) => user.username));
   const nodes = await prisma.node.findMany({
     where: { deletedAt: null },
     include: {
@@ -43,7 +44,7 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
 
     hosts[policyHost] = hostAddress;
     const dst = `${policyHost}:*`;
-    if (node.owner) addAcl(`${node.owner.username}@`, dst);
+    if (node.owner && activeUsernames.has(node.owner.username)) addAcl(`${node.owner.username}@`, dst);
 
     for (const share of node.shares) {
       if (share.targetUser && !share.targetUser.disabledAt) {
@@ -74,5 +75,16 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
       dst: [...dstSet].sort()
     }));
 
-  return { hosts, groups, acls };
+  const derpSetting = prisma.systemSetting ? await prisma.systemSetting.findUnique({ where: { key: "derpMap" } }) : null;
+  const parsedDerpSetting = derpSetting && typeof derpSetting.valueJson === "string"
+    ? JSON.parse(derpSetting.valueJson) as { derpMap?: Record<string, unknown> | null }
+    : null;
+  const derpMap = parsedDerpSetting?.derpMap ?? null;
+
+  return {
+    hosts,
+    groups,
+    ...(derpMap ? { derpMap } : {}),
+    acls
+  };
 }
