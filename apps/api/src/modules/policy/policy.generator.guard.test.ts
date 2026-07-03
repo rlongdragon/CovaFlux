@@ -15,12 +15,13 @@ import { POLICY_MODELS } from "../../plugins/policyTracking.js";
  * to PascalCase model names.
  */
 
-const DELEGATE_TO_MODEL: Record<string, string> = {
+const DELEGATE_TO_MODEL: Record<string, string | null> = {
   user: "User",
   node: "Node",
   nodeShare: "NodeShare",
   group: "Group",
-  groupMember: "GroupMember"
+  groupMember: "GroupMember",
+  systemSetting: "SystemSetting"
 };
 
 function createRecordingPrisma(touched: Set<string>) {
