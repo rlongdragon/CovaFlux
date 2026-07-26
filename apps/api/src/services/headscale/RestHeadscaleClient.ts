@@ -98,6 +98,7 @@ export class RestHeadscaleClient implements HeadscaleClient {
     const response = await this.request<{ nodes?: HeadscaleApiNode[] }>("/api/v1/node");
     return (response.nodes ?? []).map((node) => {
       const advertisedRoutes = node.availableRoutes ?? node.subnetRoutes ?? [];
+      const approvedRoutes = node.approvedRoutes ?? [];
       const expiresAt = node.expiry ? new Date(node.expiry) : undefined;
       return {
         id: this.requireString(node.id, "node.id"),
@@ -108,13 +109,26 @@ export class RestHeadscaleClient implements HeadscaleClient {
         nodeKey: node.nodeKey,
         ipAddresses: node.ipAddresses ?? [],
         advertisedRoutes,
+        approvedRoutes,
         isExitNode: advertisedRoutes.includes("0.0.0.0/0") || advertisedRoutes.includes("::/0"),
+        isExitNodeApproved: approvedRoutes.includes("0.0.0.0/0") || approvedRoutes.includes("::/0"),
         online: Boolean(node.online),
         expired: expiresAt ? expiresAt.getTime() > 0 && expiresAt <= new Date() : false,
         lastSeenAt: node.lastSeen ? new Date(node.lastSeen) : undefined,
         expiresAt
       };
     });
+  }
+
+  async setApprovedRoutes(nodeId: string, routes: string[]): Promise<HeadscaleNode> {
+    await this.request(`/api/v1/node/${encodeURIComponent(nodeId)}/approve_routes`, {
+      method: "POST",
+      body: { routes }
+    });
+    const nodes = await this.listNodes();
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) throw new Error(`Headscale node not found after route approval: ${nodeId}`);
+    return node;
   }
 
   async expireNode(nodeId: string) {

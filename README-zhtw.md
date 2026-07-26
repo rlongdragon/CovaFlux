@@ -31,6 +31,17 @@ username: admin
 password: change-me-password
 ```
 
+## Exit Node
+
+節點必須先宣告 `0.0.0.0/0` 和／或 `::/0`（例如執行 `tailscale up --advertise-exit-node`），再由 CovaFlux 管理員從 Web 管理介面核准或停用，亦可呼叫：
+
+```text
+POST /nodes/:id/exit-node/approve
+POST /nodes/:id/exit-node/disable
+```
+
+停用 Exit Node 時只會移除 default routes，其他已核准的 subnet routes 會保留。CovaFlux 只會在 Exit Node routes 已核准後加入 `autogroup:internet:*` ACL；分享給使用者或群組時還必須設定 `allowExitNode`。
+
 ## Docker Compose
 
 ```bash

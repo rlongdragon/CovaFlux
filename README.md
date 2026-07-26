@@ -31,6 +31,17 @@ username: admin
 password: change-me-password
 ```
 
+## Exit Nodes
+
+A node must first advertise `0.0.0.0/0` and/or `::/0` (for example with `tailscale up --advertise-exit-node`). A CovaFlux administrator can then approve or disable those default routes from the web console or through:
+
+```text
+POST /nodes/:id/exit-node/approve
+POST /nodes/:id/exit-node/disable
+```
+
+Disabling exit-node access removes only the default routes and preserves other approved subnet routes. CovaFlux adds `autogroup:internet:*` ACL access only after the exit routes are approved; shared users or groups additionally require `allowExitNode` on the share.
+
 ## Docker Compose
 
 ```bash

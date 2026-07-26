@@ -50,7 +50,9 @@ function createHeadscaleMock(currentPolicy: HeadscalePolicy) {
         givenName: "alice-node",
         ipAddresses: ["100.64.0.10"],
         advertisedRoutes: [],
+        approvedRoutes: [],
         isExitNode: false,
+        isExitNodeApproved: false,
         online: true,
         expired: false
       }
