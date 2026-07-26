@@ -140,9 +140,14 @@ export class RestHeadscaleClient implements HeadscaleClient {
   }
 
   async getPolicy(): Promise<HeadscalePolicy> {
-    const response = await this.request<{ policy?: string }>("/api/v1/policy");
-    if (!response.policy) return { acls: [] };
-    return JSON.parse(response.policy) as HeadscalePolicy;
+    try {
+      const response = await this.request<{ policy?: string }>("/api/v1/policy");
+      if (!response.policy) return { acls: [] };
+      return JSON.parse(response.policy) as HeadscalePolicy;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("acl policy not found")) return { acls: [] };
+      throw error;
+    }
   }
 
   async applyPolicy(policy: HeadscalePolicy) {
