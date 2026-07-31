@@ -35,7 +35,10 @@ type NodeItem = {
   headscaleNodeId?: string;
   name: string;
   givenName?: string | null;
+  advertisedRoutes?: string[];
+  approvedRoutes?: string[];
   isExitNode?: boolean;
+  isExitNodeApproved?: boolean;
   ownerUserId?: string | null;
   owner?: UserItem | null;
   ipAddresses?: string[];
@@ -233,6 +236,18 @@ function App() {
     await loadAll();
   }
 
+  async function disableExitNode(nodeId: string) {
+    await api(`/nodes/${nodeId}/exit-node/disable`, { method: "POST", body: JSON.stringify({}) });
+    setStatus("Exit node 已停用");
+    await loadAll();
+  }
+
+  async function approveExitNode(nodeId: string) {
+    await api(`/nodes/${nodeId}/exit-node/approve`, { method: "POST", body: JSON.stringify({}) });
+    setStatus("Exit node routes 已核准");
+    await loadAll();
+  }
+
   async function expireNode(nodeId: string) {
     await api(`/nodes/${nodeId}/expire`, { method: "POST", body: JSON.stringify({}) });
     setStatus("節點已設為 expired");
@@ -323,7 +338,7 @@ function App() {
               <CommandLine label="Exit node" command={tailscaleExitNodeCommand} onCopy={copyCommand} />
             </div>
           )}
-          <NodeList nodes={nodes} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
+          <NodeList nodes={nodes} canManageExitNodes={actor?.type === "user" && actor.role === "admin"} onApproveExitNode={approveExitNode} onDisableExitNode={disableExitNode} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
         </Panel>
 
         <Panel title="Groups" icon={<Users size={18} />}>
@@ -417,11 +432,17 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 
 function NodeList({
   nodes,
+  canManageExitNodes,
+  onApproveExitNode,
+  onDisableExitNode,
   onExpire,
   onDelete,
   onError
 }: {
   nodes: NodeItem[];
+  canManageExitNodes: boolean;
+  onApproveExitNode: (nodeId: string) => Promise<void>;
+  onDisableExitNode: (nodeId: string) => Promise<void>;
   onExpire: (nodeId: string) => Promise<void>;
   onDelete: (nodeId: string) => Promise<void>;
   onError: (message: string) => void;
@@ -454,6 +475,22 @@ function NodeList({
             <span>{node.owner?.username ?? node.ownerUserId ?? "-"}</span>
             <span>{formatDate(node.lastSeenAt)}</span>
             <div className="node-actions">
+              {canManageExitNodes && node.isExitNode && !node.isExitNodeApproved && (
+                <button
+                  onClick={() => onApproveExitNode(node.id).catch((error) => onError(error.message))}
+                  title="Approve advertised exit-node routes"
+                >
+                  <Shield size={15} /> Approve exit
+                </button>
+              )}
+              {canManageExitNodes && node.isExitNodeApproved && (
+                <button
+                  onClick={() => onDisableExitNode(node.id).catch((error) => onError(error.message))}
+                  title="Remove exit-node route approval"
+                >
+                  <Shield size={15} /> Disable exit
+                </button>
+              )}
               <button
                 disabled={node.expired}
                 onClick={() => onExpire(node.id).catch((error) => onError(error.message))}
