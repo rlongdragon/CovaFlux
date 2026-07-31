@@ -39,21 +39,30 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
 
   for (const node of nodes) {
     const runtime = runtimeById.get(node.headscaleNodeId);
+    const isExitNode = runtime?.isExitNode ?? node.isExitNode;
+    const isExitNodeApproved = runtime?.isExitNodeApproved ?? false;
     const policyHost = node.givenName ?? node.name;
     const hostAddress = runtime?.ipAddresses.find((address) => address.includes(".")) ?? runtime?.ipAddresses[0];
     if (!hostAddress) continue;
 
     hosts[policyHost] = hostAddress;
     const dst = `${policyHost}:*`;
-    if (node.owner && activeUsernames.has(node.owner.username)) addAcl(`${node.owner.username}@`, dst);
+    if (node.owner && activeUsernames.has(node.owner.username)) {
+      addAcl(`${node.owner.username}@`, dst);
+      if (isExitNode && isExitNodeApproved) addAcl(`${node.owner.username}@`, "autogroup:internet:*");
+    }
 
     for (const share of node.shares) {
       if (share.targetUser && !share.targetUser.disabledAt) {
         addAcl(`${share.targetUser.username}@`, dst);
+        if (isExitNode && isExitNodeApproved && share.allowExitNode) addAcl(`${share.targetUser.username}@`, "autogroup:internet:*");
       }
       if (share.targetGroup) {
         for (const member of share.targetGroup.members) {
-          if (!member.user.disabledAt) addAcl(`${member.user.username}@`, dst);
+          if (!member.user.disabledAt) {
+            addAcl(`${member.user.username}@`, dst);
+            if (isExitNode && isExitNodeApproved && share.allowExitNode) addAcl(`${member.user.username}@`, "autogroup:internet:*");
+          }
         }
       }
     }

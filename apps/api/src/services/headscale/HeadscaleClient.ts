@@ -29,7 +29,9 @@ export interface HeadscaleNode {
   nodeKey?: string;
   ipAddresses: string[];
   advertisedRoutes: string[];
+  approvedRoutes: string[];
   isExitNode: boolean;
+  isExitNodeApproved: boolean;
   online: boolean;
   expired: boolean;
   lastSeenAt?: Date;
@@ -54,6 +56,7 @@ export interface HeadscaleClient {
   deleteUser(userName: string): Promise<void>;
   createPreAuthKey(input: CreatePreAuthKeyInput): Promise<HeadscalePreAuthKey>;
   listNodes(): Promise<HeadscaleNode[]>;
+  setApprovedRoutes(nodeId: string, routes: string[]): Promise<HeadscaleNode>;
   expireNode(nodeId: string): Promise<void>;
   deleteNode(nodeId: string): Promise<void>;
   getPolicy(): Promise<HeadscalePolicy>;

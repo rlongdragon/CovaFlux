@@ -23,6 +23,10 @@ export async function nodesRoutes(app: FastifyInstance) {
       return {
         ...node,
         ipAddresses: runtime?.ipAddresses ?? [],
+        advertisedRoutes: runtime?.advertisedRoutes ?? JSON.parse(node.advertisedRoutesJson),
+        approvedRoutes: runtime?.approvedRoutes ?? [],
+        isExitNode: runtime?.isExitNode ?? node.isExitNode,
+        isExitNodeApproved: runtime?.isExitNodeApproved ?? false,
         online: runtime?.online ?? false,
         expired: runtime?.expired ?? false,
         expiresAt: runtime?.expiresAt ?? null
@@ -49,7 +53,18 @@ export async function nodesRoutes(app: FastifyInstance) {
       }
     });
     if (actor.type === "user" && actor.role !== "admin" && node.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
-    return node;
+    const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+    return {
+      ...node,
+      ipAddresses: runtime?.ipAddresses ?? [],
+      advertisedRoutes: runtime?.advertisedRoutes ?? JSON.parse(node.advertisedRoutesJson),
+      approvedRoutes: runtime?.approvedRoutes ?? [],
+      isExitNode: runtime?.isExitNode ?? node.isExitNode,
+      isExitNodeApproved: runtime?.isExitNodeApproved ?? false,
+      online: runtime?.online ?? false,
+      expired: runtime?.expired ?? false,
+      expiresAt: runtime?.expiresAt ?? null
+    };
   });
 
   app.post("/nodes/register-key", async (request) => {
@@ -89,6 +104,38 @@ export async function nodesRoutes(app: FastifyInstance) {
     const result = await syncHeadscaleNodes(app.prisma, app.headscale, actor, { auditAction: true });
     const policyVersion = await applyCurrentPolicy(app.prisma, app.headscale, actor, { runtimeNodes: result.runtimeNodes, skipSync: true, onlyIfChanged: true });
     return { count: result.count, staleDeleted: result.staleDeleted, policyApplied: Boolean(policyVersion), nodes: result.nodes };
+  });
+
+  app.post("/nodes/:id/exit-node/approve", async (request, reply) => {
+    const actor = await app.requireScope(request, "nodes:write");
+    if (actor.type !== "user" || actor.role !== "admin") return reply.status(403).send({ error: "permission_denied" });
+    const { id } = request.params as { id: string };
+    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+    const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+    if (!runtime) return reply.status(404).send({ error: "headscale_node_not_found" });
+    const exitRoutes = runtime.advertisedRoutes.filter((route) => route === "0.0.0.0/0" || route === "::/0");
+    if (exitRoutes.length === 0) return reply.status(400).send({ error: "exit_node_not_advertised" });
+    const approvedRoutes = [...new Set([...runtime.approvedRoutes, ...exitRoutes])];
+    const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
+    await audit(app.prisma, actor, "node.exit_node_approved", "node", id, { routes: exitRoutes });
+    markPolicyDirty();
+    return updated;
+  });
+
+  app.post("/nodes/:id/exit-node/disable", async (request, reply) => {
+    const actor = await app.requireScope(request, "nodes:write");
+    if (actor.type !== "user" || actor.role !== "admin") return reply.status(403).send({ error: "permission_denied" });
+    const { id } = request.params as { id: string };
+    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
+    const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+    if (!runtime) return reply.status(404).send({ error: "headscale_node_not_found" });
+    const approvedRoutes = runtime.approvedRoutes.filter((route) => route !== "0.0.0.0/0" && route !== "::/0");
+    const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
+    await audit(app.prisma, actor, "node.exit_node_disabled", "node", id);
+    markPolicyDirty();
+    return updated;
   });
 
   app.post("/nodes/:id/expire", async (request, reply) => {

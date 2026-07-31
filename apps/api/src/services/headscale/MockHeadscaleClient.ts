@@ -48,7 +48,9 @@ export class MockHeadscaleClient implements HeadscaleClient {
       nodeKey: createOpaqueToken("nodekey"),
       ipAddresses: [`100.64.0.${this.ipCounter++}`],
       advertisedRoutes: [],
+      approvedRoutes: [],
       isExitNode: false,
+      isExitNodeApproved: false,
       online: true,
       expired: false,
       lastSeenAt: new Date()
@@ -59,6 +61,25 @@ export class MockHeadscaleClient implements HeadscaleClient {
 
   async listNodes() {
     return [...this.nodes.values()];
+  }
+
+  setNode(node: HeadscaleNode) {
+    this.nodes.set(node.id, node);
+  }
+
+  async setApprovedRoutes(nodeId: string, routes: string[]) {
+    const node = this.nodes.get(nodeId);
+    if (!node) throw new Error(`Headscale node not found: ${nodeId}`);
+    const advertised = new Set(node.advertisedRoutes);
+    const invalid = routes.filter((route) => !advertised.has(route) && !node.approvedRoutes.includes(route));
+    if (invalid.length > 0) throw new Error(`Route is not advertised by this node: ${invalid.join(", ")}`);
+    const updated = {
+      ...node,
+      approvedRoutes: [...routes],
+      isExitNodeApproved: routes.includes("0.0.0.0/0") || routes.includes("::/0")
+    };
+    this.nodes.set(nodeId, updated);
+    return updated;
   }
 
   async expireNode(nodeId: string) {
