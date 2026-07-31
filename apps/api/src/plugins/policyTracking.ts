@@ -75,7 +75,8 @@ export const POLICY_MODELS = new Set<string>([
   "Node",
   "NodeShare",
   "Group",
-  "GroupMember"
+  "GroupMember",
+  "SystemSetting"
 ]);
 
 const WRITE_OPERATIONS = new Set<string>([

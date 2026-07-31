@@ -37,7 +37,21 @@ export async function nodesRoutes(app: FastifyInstance) {
   app.get("/nodes/:id", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "nodes:read");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id }, include: { owner: { select: { id: true, username: true } } } });
+    const node = await app.prisma.node.findUniqueOrThrow({
+      where: { id },
+      include: {
+        owner: { select: { id: true, username: true } },
+        shares: {
+          where: { revokedAt: null },
+          include: {
+            sharedBy: { select: { id: true, username: true } },
+            targetUser: { select: { id: true, username: true } },
+            targetGroup: { include: { members: { include: { user: { select: { id: true, username: true } } } } } }
+          },
+          orderBy: { createdAt: "desc" }
+        }
+      }
+    });
     if (actor.type === "user" && actor.role !== "admin" && node.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
     const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
     return {

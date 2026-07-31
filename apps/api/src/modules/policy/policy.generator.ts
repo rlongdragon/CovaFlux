@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { HeadscaleNode, HeadscalePolicy } from "../../services/headscale/HeadscaleClient.js";
 
@@ -84,5 +85,27 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
       dst: [...dstSet].sort()
     }));
 
-  return { hosts, groups, acls };
+  const derpMap = await readDerpMapSetting(prisma);
+
+  return {
+    hosts,
+    groups,
+    ...(derpMap ? { derpMap } : {}),
+    acls
+  };
+}
+
+async function readDerpMapSetting(prisma: PrismaClient): Promise<Record<string, unknown> | null> {
+  if (!prisma.systemSetting) return null;
+
+  try {
+    const derpSetting = await prisma.systemSetting.findUnique({ where: { key: "derpMap" } });
+    const parsedDerpSetting = derpSetting && typeof derpSetting.valueJson === "string"
+      ? JSON.parse(derpSetting.valueJson) as { derpMap?: Record<string, unknown> | null }
+      : null;
+    return parsedDerpSetting?.derpMap ?? null;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") return null;
+    throw error;
+  }
 }
