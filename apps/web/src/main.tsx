@@ -21,6 +21,7 @@ import { downloadMachinesCsv, exportMachinesCsv, filterMachines, machineStatus, 
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:12145`;
+const HEADSCALE_LOGIN_URL = import.meta.env.VITE_HEADSCALE_LOGIN_URL || `${window.location.protocol}//${window.location.hostname}`;
 
 type Actor = { type: "user" | "api_token"; id: string; username?: string; role?: "admin" | "user" };
 type ApiState = { nodes: NodeItem[] };
@@ -32,8 +33,8 @@ const initialData: ApiState = { nodes: [] };
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem("covaflux_token") ?? "");
   const [actor, setActor] = useState<Actor | null>(null);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("change-me-password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [data, setData] = useState<ApiState>(initialData);
 
@@ -196,7 +197,7 @@ function FilterMenu({ filter, setFilter, onClose }: { filter: MachineFilter; set
 
 function MachineTable({ nodes, canManageExitNodes, onAction }: { nodes: NodeItem[]; canManageExitNodes: boolean; onAction: (node: NodeItem, action: "approve" | "disable" | "expire" | "delete") => void }) {
   if (!nodes.length) return <div className="empty-machines"><MonitorCog size={28} /><h2>No machines found</h2><p>Try changing your search or filters.</p></div>;
-  return <div className="table-scroll"><table className="machine-table"><thead><tr><th>Machine</th><th>Addresses</th><th>Version</th><th>Last seen</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nodes.map((node) => <MachineRow key={node.id} node={node} canManageExitNodes={canManageExitNodes} onAction={onAction} />)}</tbody></table></div>;
+  return <div className="table-scroll"><table className="machine-table"><thead><tr><th>Machine</th><th>Addresses</th><th>Last seen</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nodes.map((node) => <MachineRow key={node.id} node={node} canManageExitNodes={canManageExitNodes} onAction={onAction} />)}</tbody></table></div>;
 }
 
 function MachineRow({ node, canManageExitNodes, onAction }: { node: NodeItem; canManageExitNodes: boolean; onAction: (node: NodeItem, action: "approve" | "disable" | "expire" | "delete") => void }) {
@@ -206,7 +207,7 @@ function MachineRow({ node, canManageExitNodes, onAction }: { node: NodeItem; ca
   const routes = subnetRoutes(node);
   const name = node.givenName ?? node.name;
   useEffect(() => { const close = (event: MouseEvent) => { if (!ref.current?.contains(event.target as globalThis.Node)) setOpen(false); }; document.addEventListener("mousedown", close); return () => document.removeEventListener("mousedown", close); }, []);
-  return <tr><td><div className="machine-name"><div><span className={`status-dot mobile-status ${status}`} /> <strong>{name}</strong></div><span>{node.owner?.username ?? node.ownerUserId ?? "Unassigned"}</span><div className="badges">{node.expired && <Badge tone="neutral">Expired</Badge>}{node.isExitNode && <Badge tone={node.isExitNodeApproved ? "blue" : "warning"}>{node.isExitNodeApproved ? "Exit node" : "Exit pending"}</Badge>}{routes.length > 0 && <Badge tone="blue">Subnets</Badge>}{node.driftStatus && node.driftStatus !== "managed" && <Badge tone="warning">{node.driftStatus}</Badge>}</div></div></td><td><AddressList name={name} addresses={node.ipAddresses ?? []} /></td><td><div className="version-cell"><span className="version-status">⊙</span><div><span>{node.version || "Unknown"}</span><small>{node.os || "Unknown platform"}</small></div></div></td><td><div className="last-seen"><span className={`status-dot ${status}`} /> <span>{node.online && !node.expired ? "Connected" : formatRelative(node.lastSeenAt)}</span>{node.expiresAt && <small>{node.expired ? `Expired ${formatShortDate(node.expiresAt)}` : `Expires ${formatShortDate(node.expiresAt)}`}</small>}</div></td><td className="action-cell"><div className="row-menu" ref={ref}><button className="ellipsis" aria-label={`Actions for ${name}`} aria-expanded={open} onClick={() => setOpen(!open)}><Ellipsis size={19} /></button>{open && <div className="action-menu">{canManageExitNodes && node.isExitNode && !node.isExitNodeApproved && <button onClick={() => { onAction(node, "approve"); setOpen(false); }}><Shield size={15} /> Approve exit node</button>}{canManageExitNodes && node.isExitNodeApproved && <button onClick={() => { onAction(node, "disable"); setOpen(false); }}><Shield size={15} /> Disable exit node</button>}<button disabled={node.expired} onClick={() => { onAction(node, "expire"); setOpen(false); }}><KeyRound size={15} /> Expire key</button><hr /><button className="danger-text" onClick={() => { onAction(node, "delete"); setOpen(false); }}><Trash2 size={15} /> Delete machine</button></div>}</div></td></tr>;
+  return <tr><td><div className="machine-name"><div><span className={`status-dot mobile-status ${status}`} /> <strong>{name}</strong></div><span>{node.owner?.username ?? node.ownerUserId ?? "Unassigned"}</span><div className="badges">{node.expired && <Badge tone="neutral">Expired</Badge>}{node.isExitNode && <Badge tone={node.isExitNodeApproved ? "blue" : "warning"}>{node.isExitNodeApproved ? "Exit node" : "Exit pending"}</Badge>}{routes.length > 0 && <Badge tone="blue">Subnets</Badge>}{node.driftStatus && node.driftStatus !== "managed" && <Badge tone="warning">{node.driftStatus}</Badge>}</div></div></td><td><AddressList name={name} addresses={node.ipAddresses ?? []} /></td><td><div className="last-seen"><span className={`status-dot ${status}`} /> <span>{node.online && !node.expired ? "Connected" : formatRelative(node.lastSeenAt)}</span>{node.expiresAt && <small>{node.expired ? `Expired ${formatShortDate(node.expiresAt)}` : `Expires ${formatShortDate(node.expiresAt)}`}</small>}</div></td><td className="action-cell"><div className="row-menu" ref={ref}><button className="ellipsis" aria-label={`Actions for ${name}`} aria-expanded={open} onClick={() => setOpen(!open)}><Ellipsis size={19} /></button>{open && <div className="action-menu">{canManageExitNodes && node.isExitNode && !node.isExitNodeApproved && <button onClick={() => { onAction(node, "approve"); setOpen(false); }}><Shield size={15} /> Approve exit node</button>}{canManageExitNodes && node.isExitNodeApproved && <button onClick={() => { onAction(node, "disable"); setOpen(false); }}><Shield size={15} /> Disable exit node</button>}<button disabled={node.expired} onClick={() => { onAction(node, "expire"); setOpen(false); }}><KeyRound size={15} /> Expire key</button><hr /><button className="danger-text" onClick={() => { onAction(node, "delete"); setOpen(false); }}><Trash2 size={15} /> Delete machine</button></div>}</div></td></tr>;
 }
 
 function AddressList({ name, addresses }: { name: string; addresses: string[] }) {
@@ -219,7 +220,7 @@ function AddressList({ name, addresses }: { name: string; addresses: string[] })
 function Badge({ tone, children }: { tone: "neutral" | "blue" | "warning"; children: React.ReactNode }) { return <span className={`badge ${tone}`}>{children}</span>; }
 
 function AddDeviceDialog({ nodeName, setNodeName, command, busy, onCreate, onClose, onCopy }: { nodeName: string; setNodeName: (value: string) => void; command: RegistrationCommand | null; busy: boolean; onCreate: () => void; onClose: () => void; onCopy: (value: string) => void }) {
-  const loginServer = API_BASE;
+  const loginServer = HEADSCALE_LOGIN_URL;
   const base = command ? `sudo tailscale up --reset --login-server=${loginServer} --auth-key=${command.key}` : "";
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-device-title"><div className="modal-heading"><div><h2 id="add-device-title">Add a device</h2><p>Create a single-use key and connect a Tailscale client to CovaFlux.</p></div><button className="icon-button" aria-label="Close" onClick={onClose}><X size={18} /></button></div>{!command ? <><label>Machine name <span>Optional</span><input autoFocus placeholder="e.g. build-server" value={nodeName} onChange={(event) => setNodeName(event.target.value)} /></label><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={onCreate}>{busy ? "Creating…" : "Create key"}</button></div></> : <div className="setup-commands"><p>Run one of these commands on the new machine. The key expires in 24 hours.</p><Command label="Standard device" value={base} onCopy={onCopy} /><Command label="Exit node" value={`${base} --advertise-exit-node`} onCopy={onCopy} /><div className="secret-note"><Shield size={16} /> Treat this command as a secret. It contains a temporary authentication key.</div><div className="modal-actions"><button className="primary" onClick={onClose}>Done</button></div></div>}</section></div>;
 }

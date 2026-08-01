@@ -52,11 +52,6 @@ describe("filterMachines", () => {
     expect(filterMachines(nodes, { ...all, capability: "subnet" }).map((node) => node.id)).toEqual(["node-2"]);
   });
 
-  it("searches real version and operating system fields", () => {
-    const enriched = [{ ...nodes[0], version: "1.82.5", os: "linux" }];
-    expect(filterMachines(enriched, { ...all, query: "1.82" })).toHaveLength(1);
-    expect(filterMachines(enriched, { ...all, query: "linux" })).toHaveLength(1);
-  });
 });
 
 describe("exportMachinesCsv", () => {
@@ -65,6 +60,11 @@ describe("exportMachinesCsv", () => {
     expect(csv).toContain("machine,owner,addresses,status,last_seen,expires_at,exit_node,subnet_routes");
     expect(csv).toContain('"black,server",alice,100.64.0.10,online');
     expect(csv).toContain(",yes,");
+  });
+
+  it("neutralizes spreadsheet formula prefixes", () => {
+    const csv = exportMachinesCsv([{ ...nodes[0], name: "=HYPERLINK(\"https://example.invalid\")" }]);
+    expect(csv).toContain('"\'=HYPERLINK(""https://example.invalid"")"');
   });
 });
 

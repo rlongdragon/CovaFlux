@@ -21,8 +21,6 @@ export type NodeItem = {
   lastSeenAt?: string | null;
   expiresAt?: string | null;
   driftStatus?: string;
-  version?: string | null;
-  os?: string | null;
 };
 
 export type MachineFilter = {
@@ -54,16 +52,15 @@ export function filterMachines(nodes: NodeItem[], filter: MachineFilter) {
       node.ownerUserId,
       ...(node.ipAddresses ?? []),
       ...(node.advertisedRoutes ?? []),
-      ...(node.approvedRoutes ?? []),
-      node.version ?? "",
-      node.os ?? ""
+      ...(node.approvedRoutes ?? [])
     ].filter(Boolean).join(" ").toLocaleLowerCase();
     return haystack.includes(query);
   });
 }
 
 function csvCell(value: unknown) {
-  const text = value == null ? "" : String(value);
+  let text = value == null ? "" : String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 

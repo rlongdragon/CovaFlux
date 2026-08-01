@@ -118,7 +118,6 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .address-popover span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .address-popover button { border: 0; background: transparent; color: #bbb9b5; padding: 2px; cursor: pointer; }
 .version-cell { display: flex; align-items: flex-start; gap: 7px; }
-.version-status { color: #5f5d5b; font-size: 14px; }
 .version-cell div { display: grid; gap: 2px; }
 .version-cell small, .last-seen small { color: #d6d4d0; font-size: 10px; }
 .last-seen { min-width: 0; display: grid; gap: 3px; grid-template-columns: auto 1fr; align-items: center; }

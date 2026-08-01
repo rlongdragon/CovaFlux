@@ -92,15 +92,6 @@ describe("exit-node approval route", () => {
     expect(response.json()[0].lastSeenAt).toBe(lastSeenAt.toISOString());
   });
 
-  it("returns real client version and OS metadata in the machine inventory", async () => {
-    const mock = app.headscale as MockHeadscaleClient;
-    const runtime = (await mock.listNodes())[0];
-    mock.setNode({ ...runtime, version: "1.82.5", os: "linux" });
-
-    const response = await app.inject({ method: "GET", url: "/nodes", headers: h() });
-    expect(response.statusCode, response.body).toBe(200);
-    expect(response.json()[0]).toMatchObject({ version: "1.82.5", os: "linux" });
-  });
 
   it("lets an administrator approve advertised exit routes without dropping other approved routes", async () => {
     const before = await app.prisma.policyVersion.findFirst({ orderBy: { version: "desc" } });

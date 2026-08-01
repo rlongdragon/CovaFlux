@@ -36,8 +36,6 @@ export interface HeadscaleNode {
   expired: boolean;
   lastSeenAt?: Date;
   expiresAt?: Date;
-  version?: string;
-  os?: string;
 }
 
 export interface HeadscalePolicy {

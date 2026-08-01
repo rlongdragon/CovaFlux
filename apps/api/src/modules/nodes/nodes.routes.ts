@@ -29,9 +29,7 @@ export async function nodesRoutes(app: FastifyInstance) {
         isExitNodeApproved: runtime?.isExitNodeApproved ?? false,
         online: runtime?.online ?? false,
         expired: runtime?.expired ?? false,
-        expiresAt: runtime?.expiresAt ?? null,
-        version: runtime?.version ?? null,
-        os: runtime?.os ?? null
+        expiresAt: runtime?.expiresAt ?? null
       };
     });
   });
@@ -65,9 +63,7 @@ export async function nodesRoutes(app: FastifyInstance) {
       isExitNodeApproved: runtime?.isExitNodeApproved ?? false,
       online: runtime?.online ?? false,
       expired: runtime?.expired ?? false,
-      expiresAt: runtime?.expiresAt ?? null,
-      version: runtime?.version ?? null,
-      os: runtime?.os ?? null
+      expiresAt: runtime?.expiresAt ?? null
     };
   });
 
