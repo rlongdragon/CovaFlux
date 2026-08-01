@@ -1,539 +1,235 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Clipboard, KeyRound, Power, RefreshCw, Shield, Trash2, Users, Workflow } from "lucide-react";
+import {
+  ChevronDown,
+  Clipboard,
+  Download,
+  Ellipsis,
+  Filter,
+  KeyRound,
+  LogOut,
+  MonitorCog,
+  CircleHelp,
+  RefreshCw,
+  Search,
+  Shield,
+  Trash2,
+  UserRound,
+  X
+} from "lucide-react";
+import { downloadMachinesCsv, exportMachinesCsv, filterMachines, machineStatus, subnetRoutes, type MachineFilter, type NodeItem } from "./machines.js";
 import "./styles.css";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  `${window.location.protocol}//${window.location.hostname}:12145`;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:12145`;
 
-type ApiState = {
-  users: unknown[];
-  nodes: unknown[];
-  groups: unknown[];
-  shares: unknown[];
-  policy: unknown;
-  tokens: unknown[];
-  auditLogs: unknown[];
-};
+type Actor = { type: "user" | "api_token"; id: string; username?: string; role?: "admin" | "user" };
+type ApiState = { nodes: NodeItem[] };
+type RegistrationCommand = { key: string; nodeName?: string };
 
-type Actor = {
-  type: "user" | "api_token";
-  id: string;
-  username?: string;
-  role?: "admin" | "user";
-};
 
-type UserItem = {
-  id: string;
-  username: string;
-  role?: string;
-};
-
-type NodeItem = {
-  id: string;
-  headscaleNodeId?: string;
-  name: string;
-  givenName?: string | null;
-  advertisedRoutes?: string[];
-  approvedRoutes?: string[];
-  isExitNode?: boolean;
-  isExitNodeApproved?: boolean;
-  ownerUserId?: string | null;
-  owner?: UserItem | null;
-  ipAddresses?: string[];
-  online?: boolean;
-  expired?: boolean;
-  lastSeenAt?: string | null;
-  expiresAt?: string | null;
-  driftStatus?: string;
-};
-
-type GroupItem = {
-  id: string;
-  name: string;
-  members?: Array<{ user?: UserItem }>;
-};
-
-type ShareItem = {
-  id: string;
-  node?: NodeItem;
-  targetUser?: UserItem | null;
-  targetGroup?: GroupItem | null;
-  allowExitNode: boolean;
-  revokedAt?: string | null;
-};
-
-type RegistrationCommand = {
-  key: string;
-  nodeName?: string;
-};
+const initialData: ApiState = { nodes: [] };
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem("covaflux_token") ?? "");
   const [actor, setActor] = useState<Actor | null>(null);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("change-me-password");
-  const [newUser, setNewUser] = useState({ username: "", password: "", role: "user" });
-  const [nodeName, setNodeName] = useState("");
-  const [groupName, setGroupName] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [targetUserId, setTargetUserId] = useState("");
-  const [targetGroupId, setTargetGroupId] = useState("");
-  const [memberGroupId, setMemberGroupId] = useState("");
-  const [memberUserId, setMemberUserId] = useState("");
-  const [allowExitNode, setAllowExitNode] = useState(false);
-  const [registrationCommand, setRegistrationCommand] = useState<RegistrationCommand | null>(null);
   const [status, setStatus] = useState("");
-  const [data, setData] = useState<ApiState>({
-    users: [],
-    nodes: [],
-    groups: [],
-    shares: [],
-    policy: null,
-    tokens: [],
-    auditLogs: []
-  });
+  const [data, setData] = useState<ApiState>(initialData);
 
-  const authHeaders = useMemo(() => ({
-    ...(token ? { authorization: `Bearer ${token}` } : {})
-  }), [token]);
+  const [filter, setFilter] = useState<MachineFilter>({ status: "all", capability: "all", query: "" });
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [nodeName, setNodeName] = useState("");
+  const [registrationCommand, setRegistrationCommand] = useState<RegistrationCommand | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const authHeaders = useMemo(() => ({ ...(token ? { authorization: "Bearer " + token } : {}) }), [token]);
 
   async function api(path: string, options: RequestInit = {}) {
-    const requestHeaders = {
-      ...authHeaders,
-      ...(options.body ? { "content-type": "application/json" } : {}),
-      ...(options.headers ?? {})
-    };
-    const res = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${API_BASE}${path}`, {
       ...options,
-      headers: requestHeaders
+      headers: { ...authHeaders, ...(options.body ? { "content-type": "application/json" } : {}), ...(options.headers ?? {}) }
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
       const validationMessage = Array.isArray(body.issues)
         ? body.issues.map((issue: { path?: string[]; message?: string }) => `${issue.path?.join(".") || "body"}: ${issue.message}`).join("; ")
         : undefined;
-      throw new Error(validationMessage ?? body.message ?? body.error ?? `HTTP ${res.status}`);
+      throw new Error(validationMessage ?? body.message ?? body.error ?? `HTTP ${response.status}`);
     }
     return body;
   }
 
   async function login() {
-    const body = await api("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password })
-    });
-    localStorage.setItem("covaflux_token", body.token);
-    setToken(body.token);
-    setStatus("登入成功");
+    setBusy(true);
+    try {
+      const body = await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+      localStorage.setItem("covaflux_token", body.token);
+      setToken(body.token);
+      setStatus("Welcome back");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function loadAll() {
+  async function loadAll(quiet = false) {
     if (!token) return;
     const me = await api("/me");
     const currentActor = me.actor as Actor;
     setActor(currentActor);
-
-    const [users, nodes, groups, shares] = await Promise.all([
-      api("/users"),
-      api("/nodes"),
-      api("/groups"),
-      api("/shares")
-    ]);
-
-    let policy = null;
-    let tokens: unknown[] = [];
-    let auditLogs: unknown[] = [];
-
-    if (currentActor.type === "user" && currentActor.role === "admin") {
-      [policy, tokens, auditLogs] = await Promise.all([
-        api("/policy/preview"),
-        api("/api-tokens"),
-        api("/audit-logs")
-      ]);
-    }
-
-    setData({ users, nodes, groups, shares, policy, tokens, auditLogs });
-    setStatus("資料已更新");
-  }
-
-  async function createUser() {
-    await api("/users", {
-      method: "POST",
-      body: JSON.stringify(newUser)
-    });
-    setNewUser({ username: "", password: "", role: "user" });
-    await loadAll();
-  }
-
-  async function createGroup() {
-    await api("/groups", {
-      method: "POST",
-      body: JSON.stringify({ name: groupName })
-    });
-    setGroupName("");
-    await loadAll();
-  }
-
-  async function createRegistrationKey() {
-    const body = await api("/nodes/register-key", {
-      method: "POST",
-      body: JSON.stringify({ nodeName: nodeName || undefined, reusable: false, ephemeral: false, expiresInHours: 24 })
-    });
-    setRegistrationCommand({ key: body.key, nodeName: nodeName || undefined });
-    setNodeName("");
-    setStatus(`註冊 key: ${body.key}`);
-    await loadAll();
-  }
-
-  async function copyCommand(command: string) {
-    await navigator.clipboard.writeText(command);
-    setStatus("已複製指令");
-  }
-
-  async function shareNodeToUser() {
-    await api(`/nodes/${selectedNodeId}/shares/users`, {
-      method: "POST",
-      body: JSON.stringify({ targetUserId, allowExitNode })
-    });
-    setStatus("已分享節點給 user");
-    await loadAll();
-  }
-
-  async function shareNodeToGroup() {
-    await api(`/nodes/${selectedNodeId}/shares/groups`, {
-      method: "POST",
-      body: JSON.stringify({ targetGroupId, allowExitNode })
-    });
-    setStatus("已分享節點給 group");
-    await loadAll();
-  }
-
-  async function addGroupMember() {
-    await api(`/groups/${memberGroupId}/members`, {
-      method: "POST",
-      body: JSON.stringify({ userId: memberUserId })
-    });
-    setStatus("已加入 group member");
-    await loadAll();
-  }
-
-  async function revokeShare(shareId: string) {
-    await api(`/shares/${shareId}`, { method: "DELETE" });
-    setStatus("已撤銷 share");
-    await loadAll();
-  }
-
-  async function applyPolicy() {
-    await api("/policy/apply", { method: "POST", body: JSON.stringify({}) });
-    await loadAll();
+    const nodes = await api("/nodes");
+    setData({ ...initialData, nodes });
+    if (!quiet) setStatus("Machines updated");
   }
 
   async function syncNodes() {
-    await api("/nodes/sync", { method: "POST", body: JSON.stringify({}) });
-    setStatus("節點已同步");
-    await loadAll();
+    setBusy(true);
+    try {
+      await api("/nodes/sync", { method: "POST", body: "{}" });
+      await loadAll(true);
+      setStatus("Headscale inventory synchronized");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function disableExitNode(nodeId: string) {
-    await api(`/nodes/${nodeId}/exit-node/disable`, { method: "POST", body: JSON.stringify({}) });
-    setStatus("Exit node 已停用");
-    await loadAll();
+  async function createRegistrationKey() {
+    setBusy(true);
+    try {
+      const body = await api("/nodes/register-key", {
+        method: "POST",
+        body: JSON.stringify({ nodeName: nodeName || undefined, reusable: false, ephemeral: false, expiresInHours: 24 })
+      });
+      setRegistrationCommand({ key: body.key, nodeName: nodeName || undefined });
+      setStatus("Registration key created");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function approveExitNode(nodeId: string) {
-    await api(`/nodes/${nodeId}/exit-node/approve`, { method: "POST", body: JSON.stringify({}) });
-    setStatus("Exit node routes 已核准");
-    await loadAll();
-  }
-
-  async function expireNode(nodeId: string) {
-    await api(`/nodes/${nodeId}/expire`, { method: "POST", body: JSON.stringify({}) });
-    setStatus("節點已設為 expired");
-    await syncNodes();
-  }
-
-  async function deleteNode(nodeId: string) {
-    if (!window.confirm("確定要從 Headscale 刪除這個節點？")) return;
-    await api(`/nodes/${nodeId}`, { method: "DELETE" });
-    setStatus("節點已刪除");
-    await loadAll();
+  async function nodeAction(node: NodeItem, action: "approve" | "disable" | "expire" | "delete") {
+    if (action === "delete" && !window.confirm(`Delete ${node.givenName ?? node.name} from Headscale?`)) return;
+    const request = action === "delete"
+      ? { path: `/nodes/${node.id}`, method: "DELETE" }
+      : action === "expire"
+        ? { path: `/nodes/${node.id}/expire`, method: "POST" }
+        : { path: `/nodes/${node.id}/exit-node/${action}`, method: "POST" };
+    setBusy(true);
+    try {
+      await api(request.path, { method: request.method, ...(request.method === "POST" ? { body: "{}" } : {}) });
+      await loadAll(true);
+      setStatus(`${node.givenName ?? node.name} updated`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   useEffect(() => {
-    loadAll().catch((error) => setStatus(error.message));
+    loadAll(true).catch((error) => {
+      setStatus(error.message);
+      if (/401|unauthorized|invalid/i.test(error.message)) {
+        localStorage.removeItem("covaflux_token");
+        setToken("");
+      }
+    });
   }, [token]);
 
-  const users = data.users as UserItem[];
-  const nodes = data.nodes as NodeItem[];
-  const groups = data.groups as GroupItem[];
-  const shares = data.shares as ShareItem[];
-  const tailscaleLoginServer = `http://${window.location.hostname}`;
-  const tailscaleBaseCommand = registrationCommand
-    ? `sudo tailscale up --reset --login-server=${tailscaleLoginServer} --auth-key=${registrationCommand.key}`
-    : "";
-  const tailscaleExitNodeCommand = tailscaleBaseCommand ? `${tailscaleBaseCommand} --advertise-exit-node` : "";
+  if (!token) return <Login username={username} password={password} busy={busy} status={status} setUsername={setUsername} setPassword={setPassword} onLogin={() => login().catch((error) => setStatus(error.message))} />;
 
+  const visibleNodes = filterMachines(data.nodes, filter);
   return (
-    <main>
-      <header>
-        <div>
-          <h1>CovaFlux</h1>
-          <p>Headscale 管理 API 開發測試前台</p>
-        </div>
-        <button onClick={() => loadAll().catch((error) => setStatus(error.message))}>
-          <RefreshCw size={16} /> 重新整理
-        </button>
-      </header>
-
-      <section className="toolbar">
-        <label>
-          Username
-          <input value={username} onChange={(event) => setUsername(event.target.value)} />
-        </label>
-        <label>
-          Password
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-        </label>
-        <button onClick={() => login().catch((error) => setStatus(error.message))}>
-          <KeyRound size={16} /> 登入
-        </button>
-        <button onClick={() => { localStorage.removeItem("covaflux_token"); setToken(""); setActor(null); }}>
-          登出
-        </button>
-      </section>
-
-      {status && <div className="status">{status}</div>}
-      {actor && <div className="status">目前登入：{actor.username ?? actor.id} / {actor.role ?? actor.type}</div>}
-
-      <div className="grid">
-        <Panel title="Users" icon={<Users size={18} />}>
-          {actor?.role === "admin" && (
-            <div className="inline">
-              <input placeholder="username" value={newUser.username} onChange={(event) => setNewUser({ ...newUser, username: event.target.value })} />
-              <input placeholder="password, min 8 chars" minLength={8} type="password" value={newUser.password} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} />
-              <select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}>
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </select>
-              <button onClick={() => createUser().catch((error) => setStatus(error.message))}>建立</button>
-            </div>
-          )}
-          <Json data={data.users} />
-        </Panel>
-
-        <Panel title="Nodes" icon={<Workflow size={18} />}>
-          <div className="inline">
-            <input placeholder="node name" value={nodeName} onChange={(event) => setNodeName(event.target.value)} />
-            <button onClick={() => createRegistrationKey().catch((error) => setStatus(error.message))}>建立註冊 key</button>
-            <button onClick={() => syncNodes().catch((error) => setStatus(error.message))}>修復同步</button>
-          </div>
-          {registrationCommand && (
-            <div className="command-box">
-              <div className="command-header">
-                <strong>節點加入指令{registrationCommand.nodeName ? ` / ${registrationCommand.nodeName}` : ""}</strong>
-              </div>
-              <CommandLine label="一般節點" command={tailscaleBaseCommand} onCopy={copyCommand} />
-              <CommandLine label="Exit node" command={tailscaleExitNodeCommand} onCopy={copyCommand} />
-            </div>
-          )}
-          <NodeList nodes={nodes} canManageExitNodes={actor?.type === "user" && actor.role === "admin"} onApproveExitNode={approveExitNode} onDisableExitNode={disableExitNode} onExpire={expireNode} onDelete={deleteNode} onError={setStatus} />
-        </Panel>
-
-        <Panel title="Groups" icon={<Users size={18} />}>
-          <div className="inline">
-            <input placeholder="group name" value={groupName} onChange={(event) => setGroupName(event.target.value)} />
-            <button onClick={() => createGroup().catch((error) => setStatus(error.message))}>建立</button>
-          </div>
-          <div className="inline form-row">
-            <select value={memberGroupId} onChange={(event) => setMemberGroupId(event.target.value)}>
-              <option value="">選 group</option>
-              {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            </select>
-            <select value={memberUserId} onChange={(event) => setMemberUserId(event.target.value)}>
-              <option value="">選 member user</option>
-              {users.filter((user) => user.id !== actor?.id).map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-            </select>
-            <button disabled={!memberGroupId || !memberUserId} onClick={() => addGroupMember().catch((error) => setStatus(error.message))}>加入成員</button>
-          </div>
-          <Json data={data.groups} />
-        </Panel>
-
-        <Panel title="Share Node" icon={<Workflow size={18} />}>
-          <div className="inline form-row">
-            <select value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
-              <option value="">選 node</option>
-              {nodes.map((node) => <option key={node.id} value={node.id}>{node.givenName ?? node.name}</option>)}
-            </select>
-            <label className="check">
-              <input type="checkbox" checked={allowExitNode} onChange={(event) => setAllowExitNode(event.target.checked)} />
-              allow exit node
-            </label>
-          </div>
-          <div className="inline form-row">
-            <select value={targetUserId} onChange={(event) => setTargetUserId(event.target.value)}>
-              <option value="">選 target user</option>
-              {users.filter((user) => user.id !== actor?.id).map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-            </select>
-            <button disabled={!selectedNodeId || !targetUserId} onClick={() => shareNodeToUser().catch((error) => setStatus(error.message))}>分享給 User</button>
-          </div>
-          <div className="inline form-row">
-            <select value={targetGroupId} onChange={(event) => setTargetGroupId(event.target.value)}>
-              <option value="">選 target group</option>
-              {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            </select>
-            <button disabled={!selectedNodeId || !targetGroupId} onClick={() => shareNodeToGroup().catch((error) => setStatus(error.message))}>分享給 Group</button>
-          </div>
-        </Panel>
-
-        {actor?.role === "admin" && (
-          <Panel title="Policy" icon={<Shield size={18} />}>
-            <button onClick={() => applyPolicy().catch((error) => setStatus(error.message))}>Apply Policy</button>
-            <Json data={data.policy} />
-          </Panel>
-        )}
-
-        <Panel title="Shares / Tokens / Audit" icon={<KeyRound size={18} />}>
-          <h3>Shares</h3>
-          <div className="list">
-            {shares.map((share) => (
-              <div className="list-item" key={share.id}>
-                <span>{share.node?.givenName ?? share.node?.name ?? share.id}</span>
-                <span>{share.targetUser?.username ?? share.targetGroup?.name ?? "unknown"}</span>
-                <span>{share.allowExitNode ? "exit allowed" : "node only"}</span>
-                {!share.revokedAt && <button onClick={() => revokeShare(share.id).catch((error) => setStatus(error.message))}>撤銷</button>}
-              </div>
-            ))}
-          </div>
-          <Json data={data.shares} />
-          {actor?.role === "admin" && (
-            <>
-              <h3>API Tokens</h3>
-              <Json data={data.tokens} />
-              <h3>Audit Logs</h3>
-              <Json data={data.auditLogs} />
-            </>
-          )}
-        </Panel>
-      </div>
-    </main>
-  );
-}
-
-function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="panel">
-      <h2>{icon}{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function NodeList({
-  nodes,
-  canManageExitNodes,
-  onApproveExitNode,
-  onDisableExitNode,
-  onExpire,
-  onDelete,
-  onError
-}: {
-  nodes: NodeItem[];
-  canManageExitNodes: boolean;
-  onApproveExitNode: (nodeId: string) => Promise<void>;
-  onDisableExitNode: (nodeId: string) => Promise<void>;
-  onExpire: (nodeId: string) => Promise<void>;
-  onDelete: (nodeId: string) => Promise<void>;
-  onError: (message: string) => void;
-}) {
-  if (nodes.length === 0) {
-    return <div className="empty-state">尚未偵測到節點</div>;
-  }
-
-  return (
-    <div className="node-table">
-      <div className="node-row node-head">
-        <span>節點</span>
-        <span>狀態</span>
-        <span>IP</span>
-        <span>Owner</span>
-        <span>Last seen</span>
-        <span>操作</span>
-      </div>
-      {nodes.map((node) => {
-        const ipAddresses = node.ipAddresses ?? [];
-        const statusLabel = node.expired ? "expired" : node.online ? "online" : "offline";
-        return (
-          <div className="node-row" key={node.id}>
-            <div className="node-name">
-              <strong>{node.givenName ?? node.name}</strong>
-              <small>hs #{node.headscaleNodeId ?? "-"} / {node.driftStatus ?? "managed"}</small>
-            </div>
-            <span className={`pill ${statusLabel}`}>{statusLabel}</span>
-            <span className="mono">{ipAddresses.join(", ") || "-"}</span>
-            <span>{node.owner?.username ?? node.ownerUserId ?? "-"}</span>
-            <span>{formatDate(node.lastSeenAt)}</span>
-            <div className="node-actions">
-              {canManageExitNodes && node.isExitNode && !node.isExitNodeApproved && (
-                <button
-                  onClick={() => onApproveExitNode(node.id).catch((error) => onError(error.message))}
-                  title="Approve advertised exit-node routes"
-                >
-                  <Shield size={15} /> Approve exit
-                </button>
-              )}
-              {canManageExitNodes && node.isExitNodeApproved && (
-                <button
-                  onClick={() => onDisableExitNode(node.id).catch((error) => onError(error.message))}
-                  title="Remove exit-node route approval"
-                >
-                  <Shield size={15} /> Disable exit
-                </button>
-              )}
-              <button
-                disabled={node.expired}
-                onClick={() => onExpire(node.id).catch((error) => onError(error.message))}
-                title="Expire node"
-              >
-                <Power size={15} /> Expire
-              </button>
-              <button
-                className="danger"
-                onClick={() => onDelete(node.id).catch((error) => onError(error.message))}
-                title="Delete node from Headscale"
-              >
-                <Trash2 size={15} /> Delete
-              </button>
-            </div>
-          </div>
-        );
-      })}
+    <div className="app-shell">
+      <Topbar actor={actor} onLogout={() => { localStorage.removeItem("covaflux_token"); setToken(""); setActor(null); }} />
+      <main className="workspace">
+        <MachinesView
+            nodes={visibleNodes}
+            total={data.nodes.length}
+            filter={filter}
+            setFilter={setFilter}
+            showFilters={showFilters}
+            setShowFilters={setShowFilters}
+            canManageExitNodes={actor?.type === "user" && actor.role === "admin"}
+            busy={busy}
+            onSync={() => syncNodes().catch((error) => setStatus(error.message))}
+            onAdd={() => { setRegistrationCommand(null); setShowAddDevice(true); }}
+            onExport={() => downloadMachinesCsv(exportMachinesCsv(visibleNodes))}
+            onAction={(node, action) => nodeAction(node, action).catch((error) => setStatus(error.message))}
+        />
+      </main>
+      {status && <div className="toast" role="status"><span>{status}</span><button aria-label="Dismiss notification" onClick={() => setStatus("")}><X size={15} /></button></div>}
+      {showAddDevice && (
+        <AddDeviceDialog
+          nodeName={nodeName}
+          setNodeName={setNodeName}
+          command={registrationCommand}
+          busy={busy}
+          onCreate={() => createRegistrationKey().catch((error) => setStatus(error.message))}
+          onClose={() => setShowAddDevice(false)}
+          onCopy={(value) => navigator.clipboard.writeText(value).then(() => setStatus("Command copied"))}
+        />
+      )}
     </div>
   );
 }
 
-function Json({ data }: { data: unknown }) {
-  return <pre>{JSON.stringify(data, null, 2)}</pre>;
+function Login({ username, password, busy, status, setUsername, setPassword, onLogin }: { username: string; password: string; busy: boolean; status: string; setUsername: (value: string) => void; setPassword: (value: string) => void; onLogin: () => void }) {
+  return <main className="login-page"><section className="login-card"><Brand /><div className="login-copy"><h1>Sign in to CovaFlux</h1><p>Manage your private Headscale network.</p></div><label>Username<input autoFocus value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onLogin()} /></label>{status && <p className="login-error" role="alert">{status}</p>}<button className="primary full" disabled={busy} onClick={onLogin}><KeyRound size={16} /> {busy ? "Signing in…" : "Sign in"}</button></section></main>;
 }
 
-function CommandLine({ label, command, onCopy }: { label: string; command: string; onCopy: (command: string) => Promise<void> }) {
-  return (
-    <div className="command-line">
-      <span>{label}</span>
-      <code>{command}</code>
-      <button onClick={() => onCopy(command).catch(() => undefined)} title={`複製${label}指令`}>
-        <Clipboard size={16} /> 複製
-      </button>
-    </div>
-  );
+function Brand() {
+  return <div className="brand"><span className="brand-mark"><i /><i /><i /><i /><i /></span><strong>CovaFlux</strong></div>;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString();
+function Topbar({ actor, onLogout }: { actor: Actor | null; onLogout: () => void }) {
+  return <><header className="topbar"><div className="topbar-inner"><Brand /><div className="account"><button className="icon-button" title="Help"><CircleHelp size={18} /></button><span className="avatar"><UserRound size={15} /></span><span className="account-name">{actor?.username ?? actor?.id ?? "Account"}</span><button className="icon-button" title="Sign out" onClick={onLogout}><LogOut size={17} /></button></div></div></header><div className="nav-shell"><nav className="main-nav" aria-label="Main navigation"><button className="active"><MonitorCog size={15} /> Machines</button></nav></div></>;
 }
+
+function MachinesView({ nodes, total, filter, setFilter, showFilters, setShowFilters, canManageExitNodes, busy, onSync, onAdd, onExport, onAction }: { nodes: NodeItem[]; total: number; filter: MachineFilter; setFilter: React.Dispatch<React.SetStateAction<MachineFilter>>; showFilters: boolean; setShowFilters: (value: boolean) => void; canManageExitNodes: boolean; busy: boolean; onSync: () => void; onAdd: () => void; onExport: () => void; onAction: (node: NodeItem, action: "approve" | "disable" | "expire" | "delete") => void }) {
+  const activeFilterCount = Number(filter.status !== "all") + Number(filter.capability !== "all");
+  return <section className="machines-page"><div className="page-heading"><div><h1>Machines</h1><p>Manage the devices connected to your network. <button className="learn-link">Learn more</button></p></div><button className="primary" onClick={onAdd}>Add device <ChevronDown size={14} /></button></div><div className="machine-tools"><div className="search-box"><Search size={17} /><input aria-label="Search machines" placeholder="Search by name, owner, tag, version…" value={filter.query ?? ""} onChange={(event) => setFilter((current) => ({ ...current, query: event.target.value }))} />{filter.query && <button aria-label="Clear search" onClick={() => setFilter((current) => ({ ...current, query: "" }))}><X size={15} /></button>}</div><div className="filter-wrap"><button className={`secondary ${activeFilterCount ? "selected" : ""}`} onClick={() => setShowFilters(!showFilters)}><Filter size={16} /> Filters {activeFilterCount > 0 && <b>{activeFilterCount}</b>} <ChevronDown size={14} /></button>{showFilters && <FilterMenu filter={filter} setFilter={setFilter} onClose={() => setShowFilters(false)} />}</div><button className="learn-link tools-learn">Learn more</button><button className="icon-button tool-icon" title="Synchronize machines" disabled={busy} onClick={onSync}><RefreshCw size={17} className={busy ? "spin" : ""} /></button><button className="icon-button tool-icon" title="Export visible machines as CSV" onClick={onExport}><Download size={17} /></button></div><div className="result-meta"><span>{nodes.length === total ? `${total} machine${total === 1 ? "" : "s"}` : `${nodes.length} of ${total} machines`}</span>{(activeFilterCount > 0 || filter.query) && <button onClick={() => setFilter({ status: "all", capability: "all", query: "" })}>Clear all</button>}</div><MachineTable nodes={nodes} canManageExitNodes={canManageExitNodes} onAction={onAction} /></section>;
+}
+
+function FilterMenu({ filter, setFilter, onClose }: { filter: MachineFilter; setFilter: React.Dispatch<React.SetStateAction<MachineFilter>>; onClose: () => void }) {
+  return <div className="filter-menu"><div className="menu-title"><strong>Filter machines</strong><button onClick={onClose}><X size={15} /></button></div><fieldset><legend>Status</legend>{(["all", "online", "offline", "expired"] as const).map((value) => <label key={value}><input type="radio" name="status" checked={filter.status === value} onChange={() => setFilter((current) => ({ ...current, status: value }))} /> {capitalize(value)}</label>)}</fieldset><fieldset><legend>Capability</legend>{(["all", "exit-node", "subnet"] as const).map((value) => <label key={value}><input type="radio" name="capability" checked={filter.capability === value} onChange={() => setFilter((current) => ({ ...current, capability: value }))} /> {value === "exit-node" ? "Exit node" : value === "subnet" ? "Subnet router" : "All"}</label>)}</fieldset><button className="reset-filter" onClick={() => setFilter((current) => ({ ...current, status: "all", capability: "all" }))}>Reset filters</button></div>;
+}
+
+function MachineTable({ nodes, canManageExitNodes, onAction }: { nodes: NodeItem[]; canManageExitNodes: boolean; onAction: (node: NodeItem, action: "approve" | "disable" | "expire" | "delete") => void }) {
+  if (!nodes.length) return <div className="empty-machines"><MonitorCog size={28} /><h2>No machines found</h2><p>Try changing your search or filters.</p></div>;
+  return <div className="table-scroll"><table className="machine-table"><thead><tr><th>Machine</th><th>Addresses</th><th>Version</th><th>Last seen</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nodes.map((node) => <MachineRow key={node.id} node={node} canManageExitNodes={canManageExitNodes} onAction={onAction} />)}</tbody></table></div>;
+}
+
+function MachineRow({ node, canManageExitNodes, onAction }: { node: NodeItem; canManageExitNodes: boolean; onAction: (node: NodeItem, action: "approve" | "disable" | "expire" | "delete") => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const status = machineStatus(node);
+  const routes = subnetRoutes(node);
+  const name = node.givenName ?? node.name;
+  useEffect(() => { const close = (event: MouseEvent) => { if (!ref.current?.contains(event.target as globalThis.Node)) setOpen(false); }; document.addEventListener("mousedown", close); return () => document.removeEventListener("mousedown", close); }, []);
+  return <tr><td><div className="machine-name"><div><span className={`status-dot mobile-status ${status}`} /> <strong>{name}</strong></div><span>{node.owner?.username ?? node.ownerUserId ?? "Unassigned"}</span><div className="badges">{node.expired && <Badge tone="neutral">Expired</Badge>}{node.isExitNode && <Badge tone={node.isExitNodeApproved ? "blue" : "warning"}>{node.isExitNodeApproved ? "Exit node" : "Exit pending"}</Badge>}{routes.length > 0 && <Badge tone="blue">Subnets</Badge>}{node.driftStatus && node.driftStatus !== "managed" && <Badge tone="warning">{node.driftStatus}</Badge>}</div></div></td><td><AddressList name={name} addresses={node.ipAddresses ?? []} /></td><td><div className="version-cell"><span className="version-status">⊙</span><div><span>{node.version || "Unknown"}</span><small>{node.os || "Unknown platform"}</small></div></div></td><td><div className="last-seen"><span className={`status-dot ${status}`} /> <span>{node.online && !node.expired ? "Connected" : formatRelative(node.lastSeenAt)}</span>{node.expiresAt && <small>{node.expired ? `Expired ${formatShortDate(node.expiresAt)}` : `Expires ${formatShortDate(node.expiresAt)}`}</small>}</div></td><td className="action-cell"><div className="row-menu" ref={ref}><button className="ellipsis" aria-label={`Actions for ${name}`} aria-expanded={open} onClick={() => setOpen(!open)}><Ellipsis size={19} /></button>{open && <div className="action-menu">{canManageExitNodes && node.isExitNode && !node.isExitNodeApproved && <button onClick={() => { onAction(node, "approve"); setOpen(false); }}><Shield size={15} /> Approve exit node</button>}{canManageExitNodes && node.isExitNodeApproved && <button onClick={() => { onAction(node, "disable"); setOpen(false); }}><Shield size={15} /> Disable exit node</button>}<button disabled={node.expired} onClick={() => { onAction(node, "expire"); setOpen(false); }}><KeyRound size={15} /> Expire key</button><hr /><button className="danger-text" onClick={() => { onAction(node, "delete"); setOpen(false); }}><Trash2 size={15} /> Delete machine</button></div>}</div></td></tr>;
+}
+
+function AddressList({ name, addresses }: { name: string; addresses: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!addresses.length) return <span className="muted">No address</span>;
+  const detailAddresses = [name, ...addresses];
+  return <div className="address-wrap"><button className="address-list" onClick={() => setExpanded(!expanded)}><span>{addresses[0]}</span><ChevronDown size={14} /></button>{expanded && <div className="address-popover">{detailAddresses.map((value) => <div key={value}><span>{value}</span><button title={`Copy ${value}`} onClick={() => navigator.clipboard.writeText(value)}><Clipboard size={14} /></button></div>)}</div>}</div>;
+}
+
+function Badge({ tone, children }: { tone: "neutral" | "blue" | "warning"; children: React.ReactNode }) { return <span className={`badge ${tone}`}>{children}</span>; }
+
+function AddDeviceDialog({ nodeName, setNodeName, command, busy, onCreate, onClose, onCopy }: { nodeName: string; setNodeName: (value: string) => void; command: RegistrationCommand | null; busy: boolean; onCreate: () => void; onClose: () => void; onCopy: (value: string) => void }) {
+  const loginServer = API_BASE;
+  const base = command ? `sudo tailscale up --reset --login-server=${loginServer} --auth-key=${command.key}` : "";
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-device-title"><div className="modal-heading"><div><h2 id="add-device-title">Add a device</h2><p>Create a single-use key and connect a Tailscale client to CovaFlux.</p></div><button className="icon-button" aria-label="Close" onClick={onClose}><X size={18} /></button></div>{!command ? <><label>Machine name <span>Optional</span><input autoFocus placeholder="e.g. build-server" value={nodeName} onChange={(event) => setNodeName(event.target.value)} /></label><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={onCreate}>{busy ? "Creating…" : "Create key"}</button></div></> : <div className="setup-commands"><p>Run one of these commands on the new machine. The key expires in 24 hours.</p><Command label="Standard device" value={base} onCopy={onCopy} /><Command label="Exit node" value={`${base} --advertise-exit-node`} onCopy={onCopy} /><div className="secret-note"><Shield size={16} /> Treat this command as a secret. It contains a temporary authentication key.</div><div className="modal-actions"><button className="primary" onClick={onClose}>Done</button></div></div>}</section></div>;
+}
+
+function Command({ label, value, onCopy }: { label: string; value: string; onCopy: (value: string) => void }) { return <div className="command"><strong>{label}</strong><div><code>{value}</code><button title={`Copy ${label} command`} onClick={() => onCopy(value)}><Clipboard size={16} /></button></div></div>; }
+
+
+
+function capitalize(value: string) { return value.charAt(0).toUpperCase() + value.slice(1); }
+function formatShortDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "unknown" : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined }).format(date); }
+function formatRelative(value?: string | null) { if (!value) return "Never"; const date = new Date(value); if (Number.isNaN(date.getTime())) return "Unknown"; const delta = Date.now() - date.getTime(); const minutes = Math.floor(delta / 60_000); if (minutes < 1) return "Just now"; if (minutes < 60) return `${minutes}m ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h ago`; const days = Math.floor(hours / 24); if (days < 14) return `${days}d ago`; return formatShortDate(value); }
 
 createRoot(document.getElementById("root")!).render(<App />);

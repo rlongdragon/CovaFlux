@@ -38,6 +38,8 @@ interface HeadscaleApiNode {
   approvedRoutes?: string[];
   availableRoutes?: string[];
   subnetRoutes?: string[];
+  version?: string;
+  os?: string;
 }
 
 export class RestHeadscaleClient implements HeadscaleClient {
@@ -115,7 +117,9 @@ export class RestHeadscaleClient implements HeadscaleClient {
         online: Boolean(node.online),
         expired: expiresAt ? expiresAt.getTime() > 0 && expiresAt <= new Date() : false,
         lastSeenAt: node.lastSeen ? new Date(node.lastSeen) : undefined,
-        expiresAt
+        expiresAt,
+        version: node.version,
+        os: node.os
       };
     });
   }
