@@ -4,6 +4,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/shared/package.json packages/shared/package.json
+# postinstall runs `prisma generate`, so the schema must exist before install
+COPY apps/api/prisma apps/api/prisma
 RUN npm install
 
 FROM node:20-bookworm-slim AS build
