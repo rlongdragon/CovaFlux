@@ -107,8 +107,7 @@ export async function nodesRoutes(app: FastifyInstance) {
   });
 
   app.post("/nodes/:id/exit-node/approve", async (request, reply) => {
-    const actor = await app.requireScope(request, "nodes:write");
-    if (actor.type !== "user" || actor.role !== "admin") return reply.status(403).send({ error: "permission_denied" });
+    const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
     const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
     if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
@@ -124,8 +123,7 @@ export async function nodesRoutes(app: FastifyInstance) {
   });
 
   app.post("/nodes/:id/exit-node/disable", async (request, reply) => {
-    const actor = await app.requireScope(request, "nodes:write");
-    if (actor.type !== "user" || actor.role !== "admin") return reply.status(403).send({ error: "permission_denied" });
+    const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
     const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
     if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
