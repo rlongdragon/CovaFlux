@@ -14,6 +14,9 @@ model User {
   role              String
   headscaleUserName String    @unique
   disabledAt        DateTime?
+  // Bumped on logout, password change and disable; JWTs carry it as `tv` and
+  // are rejected once it no longer matches.
+  tokenVersion      Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -130,6 +133,7 @@ model InviteLink {
 model ApiToken {
   id          String    @id @default(cuid())
   name        String
+  // SHA-256 of the high-entropy token, used as a direct lookup key.
   tokenHash   String    @unique
   ownerUserId String?
   scopesJson  String

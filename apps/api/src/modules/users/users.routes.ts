@@ -50,12 +50,14 @@ export async function usersRoutes(app: FastifyInstance) {
     const actor = await app.requireScope(request, "users:write");
     const { id } = request.params as { id: string };
     const input = updateUserSchema.parse(request.body);
+    const revokeSessions = input.password !== undefined || input.disabled === true || input.role !== undefined;
     const user = await app.prisma.user.update({
       where: { id },
       data: {
         role: input.role,
         passwordHash: input.password ? await hashSecret(input.password) : undefined,
-        disabledAt: input.disabled === undefined ? undefined : input.disabled ? new Date() : null
+        disabledAt: input.disabled === undefined ? undefined : input.disabled ? new Date() : null,
+        tokenVersion: revokeSessions ? { increment: 1 } : undefined
       },
       select: { id: true, username: true, role: true, disabledAt: true, updatedAt: true }
     });
@@ -66,7 +68,7 @@ export async function usersRoutes(app: FastifyInstance) {
   app.delete("/users/:id", async (request) => {
     const actor = await app.requireScope(request, "users:write");
     const { id } = request.params as { id: string };
-    const user = await app.prisma.user.update({ where: { id }, data: { disabledAt: new Date() } });
+    const user = await app.prisma.user.update({ where: { id }, data: { disabledAt: new Date(), tokenVersion: { increment: 1 } } });
     await audit(app.prisma, actor, "user.disabled", "user", id);
     return { ok: true, id: user.id };
   });

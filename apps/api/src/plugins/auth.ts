@@ -1,7 +1,9 @@
 import fp from "fastify-plugin";
 import type { FastifyRequest } from "fastify";
 import type { ApiScope, UserRole } from "@covaflux/shared";
-import { verifySecret } from "../utils/secrets.js";
+import { hashLookupToken } from "../utils/secrets.js";
+
+export const API_TOKEN_PREFIX = "cft";
 
 export type AuthActor =
   | {
@@ -16,6 +18,7 @@ export type AuthActor =
       name: string;
       scopes: ApiScope[];
       ownerUserId: string | null;
+      expiresAt: Date;
     };
 
 declare module "fastify" {
@@ -41,42 +44,51 @@ export const registerAuthPlugin = fp(async (app) => {
     if (!token) return undefined;
 
     if (scheme.toLowerCase() === "bearer") {
+      let payload: { sub: string; tv?: number };
       try {
-        const payload = await request.jwtVerify<{ sub: string; username: string; role: UserRole }>();
-        const user = await app.prisma.user.findUnique({ where: { id: payload.sub } });
-        if (!user || user.disabledAt) return undefined;
-        request.actor = {
-          type: "user",
-          id: user.id,
-          username: user.username,
-          role: user.role as UserRole
-        };
-        return request.actor;
+        payload = await request.jwtVerify<{ sub: string; tv?: number }>();
       } catch {
         return undefined;
       }
+      const user = await app.prisma.user.findUnique({ where: { id: payload.sub } });
+      // tv mismatch = the token was issued before a logout, password change
+      // or disable, so it is no longer valid.
+      if (!user || user.disabledAt || payload.tv !== user.tokenVersion) return undefined;
+      request.actor = {
+        type: "user",
+        id: user.id,
+        username: user.username,
+        role: user.role as UserRole
+      };
+      return request.actor;
     }
 
     if (scheme.toLowerCase() === "token") {
-      const tokens = await app.prisma.apiToken.findMany({ where: { revokedAt: null } });
+      // Tokens are 256-bit random values, so a single SHA-256 lookup is safe
+      // and keeps invalid tokens from costing any Argon2 work.
+      if (!token.startsWith(`${API_TOKEN_PREFIX}_`)) return undefined;
+      const apiToken = await app.prisma.apiToken.findUnique({
+        where: { tokenHash: hashLookupToken(token) },
+        include: { owner: true }
+      });
       const now = new Date();
-      for (const apiToken of tokens) {
-        if (apiToken.expiresAt && apiToken.expiresAt < now) continue;
-        if (await verifySecret(apiToken.tokenHash, token)) {
-          await app.prisma.apiToken.update({
-            where: { id: apiToken.id },
-            data: { lastUsedAt: now }
-          });
-          request.actor = {
-            type: "api_token",
-            id: apiToken.id,
-            name: apiToken.name,
-            scopes: JSON.parse(apiToken.scopesJson),
-            ownerUserId: apiToken.ownerUserId
-          };
-          return request.actor;
-        }
-      }
+      if (!apiToken || apiToken.revokedAt || !apiToken.expiresAt || apiToken.expiresAt <= now) return undefined;
+      // A token only carries the authority of its owner: once the owner is
+      // disabled, deleted or no longer an admin, the token stops working.
+      if (!apiToken.owner || apiToken.owner.disabledAt || apiToken.owner.role !== "admin") return undefined;
+      await app.prisma.apiToken.update({
+        where: { id: apiToken.id },
+        data: { lastUsedAt: now }
+      });
+      request.actor = {
+        type: "api_token",
+        id: apiToken.id,
+        name: apiToken.name,
+        scopes: JSON.parse(apiToken.scopesJson),
+        ownerUserId: apiToken.ownerUserId,
+        expiresAt: apiToken.expiresAt
+      };
+      return request.actor;
     }
 
     return undefined;

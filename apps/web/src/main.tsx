@@ -6,6 +6,29 @@ import "./styles.css";
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   `${window.location.protocol}//${window.location.hostname}:12145`;
+const HEADSCALE_URL =
+  import.meta.env.VITE_HEADSCALE_URL ||
+  `${window.location.protocol}//${window.location.hostname}`;
+
+// Session JWTs live in sessionStorage (cleared with the tab) rather than
+// localStorage; the old localStorage copy is removed on load.
+const TOKEN_KEY = "covaflux_token";
+function readStoredToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    return sessionStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function storeToken(value: string) {
+  try {
+    if (value) sessionStorage.setItem(TOKEN_KEY, value);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Storage unavailable (private mode); keep the token in memory only.
+  }
+}
 
 type ApiState = {
   users: unknown[];
@@ -70,10 +93,10 @@ type RegistrationCommand = {
 };
 
 function App() {
-  const [token, setToken] = useState(() => localStorage.getItem("covaflux_token") ?? "");
+  const [token, setToken] = useState(readStoredToken);
   const [actor, setActor] = useState<Actor | null>(null);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("change-me-password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "user" });
   const [nodeName, setNodeName] = useState("");
   const [groupName, setGroupName] = useState("");
@@ -110,6 +133,12 @@ function App() {
       headers: requestHeaders
     });
     const body = await res.json().catch(() => ({}));
+    if (res.status === 401 && token) {
+      // Expired or revoked session.
+      storeToken("");
+      setToken("");
+      setActor(null);
+    }
     if (!res.ok) {
       const validationMessage = Array.isArray(body.issues)
         ? body.issues.map((issue: { path?: string[]; message?: string }) => `${issue.path?.join(".") || "body"}: ${issue.message}`).join("; ")
@@ -124,7 +153,8 @@ function App() {
       method: "POST",
       body: JSON.stringify({ username, password })
     });
-    localStorage.setItem("covaflux_token", body.token);
+    storeToken(body.token);
+    setPassword("");
     setToken(body.token);
     setStatus("登入成功");
   }
@@ -261,6 +291,13 @@ function App() {
     await loadAll();
   }
 
+  async function logout() {
+    if (token) await api("/auth/logout", { method: "POST" }).catch(() => undefined);
+    storeToken("");
+    setToken("");
+    setActor(null);
+  }
+
   useEffect(() => {
     loadAll().catch((error) => setStatus(error.message));
   }, [token]);
@@ -269,7 +306,7 @@ function App() {
   const nodes = data.nodes as NodeItem[];
   const groups = data.groups as GroupItem[];
   const shares = data.shares as ShareItem[];
-  const tailscaleLoginServer = `http://${window.location.hostname}`;
+  const tailscaleLoginServer = HEADSCALE_URL;
   const tailscaleBaseCommand = registrationCommand
     ? `sudo tailscale up --reset --login-server=${tailscaleLoginServer} --auth-key=${registrationCommand.key}`
     : "";
@@ -290,16 +327,16 @@ function App() {
       <section className="toolbar">
         <label>
           Username
-          <input value={username} onChange={(event) => setUsername(event.target.value)} />
+          <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
         </label>
         <label>
           Password
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </label>
         <button onClick={() => login().catch((error) => setStatus(error.message))}>
           <KeyRound size={16} /> 登入
         </button>
-        <button onClick={() => { localStorage.removeItem("covaflux_token"); setToken(""); setActor(null); }}>
+        <button onClick={() => logout().catch((error) => setStatus(error.message))}>
           登出
         </button>
       </section>

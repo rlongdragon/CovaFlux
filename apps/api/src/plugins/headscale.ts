@@ -12,10 +12,10 @@ declare module "fastify" {
 
 export const registerHeadscalePlugin = fp(async (app) => {
   if (env.HEADSCALE_CLIENT_MODE === "rest") {
-    if (!env.HEADSCALE_API_KEY) {
-      throw new Error("HEADSCALE_API_KEY is required when HEADSCALE_CLIENT_MODE=rest");
+    if (!env.headscaleApiKey()) {
+      throw new Error("HEADSCALE_API_KEY or HEADSCALE_API_KEY_FILE is required when HEADSCALE_CLIENT_MODE=rest");
     }
-    app.decorate("headscale", new RestHeadscaleClient(env.HEADSCALE_BASE_URL, env.HEADSCALE_API_KEY, app.log));
+    app.decorate("headscale", new RestHeadscaleClient(env.HEADSCALE_BASE_URL, env.headscaleApiKey, app.log));
     return;
   }
 

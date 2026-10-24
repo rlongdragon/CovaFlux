@@ -140,9 +140,13 @@ Response:
 }
 ```
 
+JWTs expire after `JWT_EXPIRES_IN` (default `12h`). Repeated failures return `429 too_many_attempts` with `Retry-After` (`LOGIN_MAX_FAILURES` per client and username, five times that per client, within `LOGIN_WINDOW_MS`).
+
 ### `POST /auth/logout`
 
-Stateless logout endpoint. The client should discard the JWT.
+Revokes every JWT of the calling user (logout from all sessions).
+
+Auth: required.
 
 Response:
 
@@ -381,7 +385,7 @@ Response:
 
 ### `PATCH /nodes/:id/owner`
 
-Changes local node ownership.
+Assigns the CovaFlux owner of a node. Headscale is the ownership authority and cannot move a node to another user, so `ownerUserId` must be the user whose Headscale account registered the node; any other user returns `409 owner_transfer_unsupported` (delete the node and register it again with a key for the new owner). Node sync always sets the owner from Headscale.
 
 Auth: `nodes:write`.
 
@@ -599,7 +603,9 @@ Reads a public invite by raw token.
 
 Auth: none.
 
-Returns `404` if the invite is missing, revoked, expired, or fully used.
+Returns only what the invitee needs: invite `id`, `node` (`id` and display `name`), `createdBy` (`id`, `username`), `allowExitNode` and `expiresAt`.
+
+Returns `404` if the invite is missing, revoked, expired, fully used, or its node was deleted.
 
 ### `POST /invites/:token/accept`
 
@@ -700,7 +706,7 @@ Body:
 }
 ```
 
-`expiresAt` is optional.
+`expiresAt` is optional and defaults to 90 days; it must be in the future and at most 365 days away. A token can only create tokens with a subset of its own scopes that expire no later than itself. Tokens stop working once their owner is disabled or no longer an admin.
 
 Response includes the raw token once:
 
@@ -721,7 +727,7 @@ Auth: `tokens:write`.
 Permission:
 
 - Admin users can revoke any token.
-- Non-admin users can revoke their own tokens.
+- API tokens can list and revoke tokens of the same owner.
 
 Response:
 
@@ -747,15 +753,17 @@ Response: array of audit log records.
 
 Policy updates do not require restarting Headscale when `policy.mode` is `database`. CovaFlux applies policies through the Headscale REST API.
 
+Requests that change policy inputs apply the new policy before responding. If Headscale rejects or cannot be reached, the change stays saved but the response is `503 policy_apply_failed`, and the background reconciler (and every startup) keeps retrying until Headscale matches.
+
 ### Tailscale Client Registration
 
-For this development setup, use the Headscale login server on standard HTTP port 80:
+Use the TLS Headscale login server published by Caddy:
 
 ```bash
-sudo tailscale up --reset --login-server=http://<headscale-host> --auth-key=hskey-auth-...
+sudo tailscale up --reset --login-server=https://<HEADSCALE_DOMAIN> --auth-key=hskey-auth-...
 ```
 
-Do not use the internal development API port `12147` as the client login server unless the client explicitly supports that setup.
+Do not use the localhost-only development port `12147` as the client login server.
 
 ### Node Visibility And ACL Testing
 

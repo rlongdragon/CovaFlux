@@ -39,6 +39,8 @@ export async function generatePolicy(prisma: PrismaClient, runtimeNodes: Headsca
 
   for (const node of nodes) {
     const runtime = runtimeById.get(node.headscaleNodeId);
+    // An expired node must not stay addressable through hosts/ACL entries.
+    if (runtime?.expired) continue;
     const isExitNode = runtime?.isExitNode ?? node.isExitNode;
     const isExitNodeApproved = runtime?.isExitNodeApproved ?? false;
     const policyHost = node.givenName ?? node.name;

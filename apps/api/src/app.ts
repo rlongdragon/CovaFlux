@@ -18,10 +18,11 @@ import { apiTokensRoutes } from "./modules/api-tokens/api-tokens.routes.js";
 import { auditLogsRoutes } from "./modules/audit-logs/audit-logs.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { bootstrapAdmin } from "./modules/users/users.service.js";
-import { startPolicyReconciler } from "./modules/policy/policyReconciler.js";
+import { reconcilePolicyOnce, startPolicyReconciler } from "./modules/policy/policyReconciler.js";
+import { verifyAgainstDummy } from "./utils/secrets.js";
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, trustProxy: env.TRUST_PROXY, bodyLimit: 256 * 1024 });
 
   registerErrorHandler(app);
   app.addContentTypeParser(
@@ -41,13 +42,26 @@ export async function buildApp() {
       }
     }
   );
+  // Auth is a bearer header, never a cookie, so credentials are not needed.
+  // Only explicitly listed origins get CORS headers.
+  const corsAnyOrigin = env.CORS_ORIGINS.includes("*");
   await app.register(cors, {
-    origin: true,
-    credentials: true,
-    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+    origin: corsAnyOrigin ? "*" : env.CORS_ORIGINS.length > 0 ? env.CORS_ORIGINS : false,
+    credentials: false,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["authorization", "content-type"]
   });
-  await app.register(jwt, { secret: env.JWT_SECRET });
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("cache-control", "no-store");
+  });
+  await app.register(jwt, {
+    secret: env.JWT_SECRET,
+    sign: { algorithm: "HS256" },
+    verify: { algorithms: ["HS256"] }
+  });
   await app.register(registerDbPlugin);
   await app.register(registerHeadscalePlugin);
   await app.register(registerAuthPlugin);
@@ -68,6 +82,11 @@ export async function buildApp() {
 
   app.addHook("onReady", async () => {
     await bootstrapAdmin(app.prisma, app.headscale);
+    await verifyAgainstDummy("warm-up");
+    // Converge Headscale with the database once at startup, even when the
+    // periodic loop is disabled: a policy change whose apply failed before a
+    // restart must not stay unenforced.
+    await reconcilePolicyOnce(app.prisma, app.headscale, app.log);
 
     if (env.POLICY_RECONCILE_INTERVAL_MS > 0) {
       const reconciler = startPolicyReconciler(app.prisma, app.headscale, {

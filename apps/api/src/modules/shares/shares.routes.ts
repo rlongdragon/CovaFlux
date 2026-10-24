@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { shareToGroupSchema, shareToUserSchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
+import { nodeLock } from "../../utils/lock.js";
 
 async function requireNodeOwner(app: FastifyInstance, actor: Awaited<ReturnType<FastifyInstance["requireAuth"]>>, nodeId: string) {
   const node = await app.prisma.node.findUniqueOrThrow({ where: { id: nodeId } });
@@ -25,7 +26,8 @@ export async function sharesRoutes(app: FastifyInstance) {
     return app.prisma.nodeShare.findMany({
       where,
       include: {
-        node: true,
+        // Recipients see the shared node, not its keys or internal fields.
+        node: { select: { id: true, name: true, givenName: true, ownerUserId: true, deletedAt: true } },
         sharedBy: { select: { id: true, username: true } },
         targetUser: { select: { id: true, username: true } },
         targetGroup: true
@@ -37,37 +39,43 @@ export async function sharesRoutes(app: FastifyInstance) {
   app.post("/nodes/:id/shares/users", async (request) => {
     const actor = await app.requireUserOrScope(request, "shares:write");
     const { id } = request.params as { id: string };
-    await requireNodeOwner(app, actor, id);
     const input = shareToUserSchema.parse(request.body);
-    const share = await app.prisma.nodeShare.create({
-      data: {
-        nodeId: id,
-        sharedByUserId: actor.id,
-        targetUserId: input.targetUserId,
-        allowExitNode: input.allowExitNode,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null
-      }
+    // Ownership check and share creation under nodeLock (no transfer between).
+    return nodeLock.runExclusive(async () => {
+      await requireNodeOwner(app, actor, id);
+      const share = await app.prisma.nodeShare.create({
+        data: {
+          nodeId: id,
+          sharedByUserId: actor.id,
+          targetUserId: input.targetUserId,
+          allowExitNode: input.allowExitNode,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null
+        }
+      });
+      await audit(app.prisma, actor, "share.created_user", "share", share.id);
+      return share;
     });
-    await audit(app.prisma, actor, "share.created_user", "share", share.id);
-    return share;
   });
 
   app.post("/nodes/:id/shares/groups", async (request) => {
     const actor = await app.requireUserOrScope(request, "shares:write");
     const { id } = request.params as { id: string };
-    await requireNodeOwner(app, actor, id);
     const input = shareToGroupSchema.parse(request.body);
-    const share = await app.prisma.nodeShare.create({
-      data: {
-        nodeId: id,
-        sharedByUserId: actor.id,
-        targetGroupId: input.targetGroupId,
-        allowExitNode: input.allowExitNode,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null
-      }
+    // Ownership check and share creation under nodeLock (no transfer between).
+    return nodeLock.runExclusive(async () => {
+      await requireNodeOwner(app, actor, id);
+      const share = await app.prisma.nodeShare.create({
+        data: {
+          nodeId: id,
+          sharedByUserId: actor.id,
+          targetGroupId: input.targetGroupId,
+          allowExitNode: input.allowExitNode,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null
+        }
+      });
+      await audit(app.prisma, actor, "share.created_group", "share", share.id);
+      return share;
     });
-    await audit(app.prisma, actor, "share.created_group", "share", share.id);
-    return share;
   });
 
   app.post("/shares/:id/leave", async (request, reply) => {

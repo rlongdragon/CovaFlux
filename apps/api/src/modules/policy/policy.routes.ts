@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { audit } from "../../utils/audit.js";
+import { policyLock } from "../../utils/lock.js";
 import { syncHeadscaleNodes } from "../nodes/nodeSync.service.js";
 import { generatePolicy } from "./policy.generator.js";
-import { applyCurrentPolicy } from "./policy.service.js";
+import { applyCurrentPolicy, recordPolicyVersion } from "./policy.service.js";
 
 export async function policyRoutes(app: FastifyInstance) {
   app.get("/policy/preview", async (request) => {
@@ -31,18 +31,10 @@ export async function policyRoutes(app: FastifyInstance) {
     const actor = await app.requireScope(request, "policy:write");
     const { id } = request.params as { id: string };
     const source = await app.prisma.policyVersion.findUniqueOrThrow({ where: { id } });
-    await app.headscale.applyPolicy(JSON.parse(source.policyJson));
-    const latest = await app.prisma.policyVersion.findFirst({ orderBy: { version: "desc" } });
-    const record = await app.prisma.policyVersion.create({
-      data: {
-        version: (latest?.version ?? 0) + 1,
-        policyJson: source.policyJson,
-        generatedByUserId: actor.type === "user" ? actor.id : null,
-        appliedAt: new Date(),
-        rollbackFromVersionId: source.id
-      }
+    const record = await policyLock.runExclusive(async () => {
+      await app.headscale.applyPolicy(JSON.parse(source.policyJson));
+      return recordPolicyVersion(app.prisma, actor, source.policyJson, source.id);
     });
-    await audit(app.prisma, actor, "policy.rollback_applied", "policy_version", record.id, { rollbackFromVersionId: source.id });
     return record;
   });
 }
