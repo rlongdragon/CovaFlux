@@ -338,7 +338,7 @@ describe("share listings", () => {
     const recipientAuth = await login("share-recipient", PASS("share-recipient"));
     const shares = await app.inject({ method: "GET", url: "/shares", headers: bearer(recipientAuth) });
     expect(shares.statusCode, shares.body).toBe(200);
-    expect(shares.json()[0].node.name).toBe("listed-node");
+    expect(Object.keys(shares.json()[0].node).sort()).toEqual(["deletedAt", "givenName", "id", "isExitNode", "name", "ownerUserId"]);
     expect(shares.body).not.toContain("machineKey");
     expect(shares.body).not.toContain("nodeKey");
   });
