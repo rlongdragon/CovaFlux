@@ -1,8 +1,13 @@
+# Development overlay: mock Headscale client in the API and a localhost-only
+# Headscale port for running the API outside Docker.
 services:
+  headscale:
+    ports:
+      - "127.0.0.1:12147:8080"
+
   covaflux-api:
     environment:
       NODE_ENV: development
       HEADSCALE_CLIENT_MODE: mock
     volumes:
       - ../apps/api/prisma:/app/apps/api/prisma
-

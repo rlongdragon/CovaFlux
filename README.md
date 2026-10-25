@@ -19,17 +19,21 @@ npm run dev:web:local
 Connect to the Docker-managed local Headscale instance:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d headscale
-docker compose -f deploy/docker-compose.yml exec headscale headscale apikeys create --expiration 365d
-HEADSCALE_CLIENT_MODE=rest HEADSCALE_API_KEY=<API_KEY> npm run dev:api:local
+cp deploy/.env.example deploy/.env   # fill in the required values
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml up -d headscale
+HEADSCALE_CLIENT_MODE=rest \
+HEADSCALE_API_KEY=$(docker compose -f deploy/docker-compose.yml exec -u headscale headscale cat /secrets/headscale_api_key) \
+npm run dev:api:local
 ```
 
-Default bootstrap admin:
+Development bootstrap admin (`npm run dev:api:local` only):
 
 ```text
 username: admin
 password: change-me-password
 ```
+
+Production (`NODE_ENV=production`) refuses to start with this password, a published `JWT_SECRET`, or `CORS_ORIGINS=*`. An existing admin that still uses a published default password is switched to `BOOTSTRAP_ADMIN_PASSWORD` at startup.
 
 ## Exit Nodes
 
@@ -45,14 +49,13 @@ Disabling exit-node access removes only the default routes and preserves other a
 ## Docker Compose
 
 ```bash
-docker compose -f deploy/docker-compose.yml up --build
+cp deploy/.env.example deploy/.env   # set domains, JWT_SECRET, BOOTSTRAP_ADMIN_PASSWORD
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-The Docker Compose Headscale runtime automatically creates a Headscale API key and stores it in the `covaflux-secrets` volume. The API service reads it through `HEADSCALE_API_KEY_FILE`, so no manual token copy is required.
+Only Caddy is published (80/443). It obtains TLS certificates and serves:
 
-Services:
+- Web console and API (`/api`): `https://$COVAFLUX_DOMAIN`
+- Headscale client login server: `https://$HEADSCALE_DOMAIN` (the Headscale management API, metrics and debug paths are not exposed)
 
-- Web: http://localhost:12146
-- API: http://localhost:12145
-- Headscale client login server: http://localhost
-- Headscale development API: http://localhost:12147
+The Headscale runtime creates the API key CovaFlux uses, stores it in the `covaflux-secrets` volume (readable only by the two services), and rotates it after `HEADSCALE_API_KEY_ROTATE_AFTER_DAYS`; the API re-reads the file automatically. All containers run with a read-only root filesystem, `no-new-privileges`, dropped capabilities and memory/PID limits; application processes run as non-root users.

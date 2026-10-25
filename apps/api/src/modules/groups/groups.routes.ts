@@ -21,7 +21,7 @@ export async function groupsRoutes(app: FastifyInstance) {
   app.get("/groups/:id", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "groups:read");
     const { id } = request.params as { id: string };
-    const group = await app.prisma.group.findUniqueOrThrow({ where: { id }, include: { members: { include: { user: true } } } });
+    const group = await app.prisma.group.findUniqueOrThrow({ where: { id }, include: { members: { include: { user: { select: { id: true, username: true } } } } } });
     if (actor.type === "user" && actor.role !== "admin" && group.ownerUserId !== actor.id) return reply.status(403).send({ error: "permission_denied" });
     return group;
   });

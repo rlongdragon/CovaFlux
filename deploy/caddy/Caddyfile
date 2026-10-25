@@ -1,10 +1,28 @@
-:80 {
-  handle_path /api/* {
-    reverse_proxy covaflux-api:3000
-  }
+{$COVAFLUX_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
 
-  handle {
-    reverse_proxy covaflux-web:80
-  }
+	handle_path /api/* {
+		reverse_proxy covaflux-api:3000
+	}
+
+	handle {
+		reverse_proxy covaflux-web:8080
+	}
 }
 
+{$HEADSCALE_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Headscale's management API is for CovaFlux on the internal network only.
+	@management path /api/* /metrics* /debug/* /swagger*
+	respond @management 404
+
+	reverse_proxy headscale:8080
+}

@@ -3,6 +3,7 @@ import type { AuthActor } from "../../plugins/auth.js";
 import type { HeadscaleClient, HeadscaleNode } from "../../services/headscale/HeadscaleClient.js";
 import { runSuppressed } from "../../plugins/policyTracking.js";
 import { audit } from "../../utils/audit.js";
+import { nodeLock } from "../../utils/lock.js";
 
 export interface NodeSyncResult {
   count: number;
@@ -31,7 +32,9 @@ export async function syncHeadscaleNodes(
   actor?: AuthActor,
   options: { auditAction?: boolean } = {}
 ): Promise<NodeSyncResult> {
-  return runSuppressed(async () => {
+  // nodeLock: a sync working from an old Headscale snapshot must not
+  // interleave with (and overwrite) an owner transfer.
+  return nodeLock.runExclusive(() => runSuppressed(async () => {
     const hsNodes = await headscale.listNodes();
     const headscaleNodeIds = hsNodes.map((node) => node.id);
     const results: NodeSyncResult["nodes"] = [];
@@ -40,8 +43,15 @@ export async function syncHeadscaleNodes(
       const existing = await prisma.node.findUnique({ where: { headscaleNodeId: hsNode.id } });
       const owner = await prisma.user.findUnique({ where: { headscaleUserName: hsNode.userName } });
       const pendingIntent = existing ? null : await findPendingRegistrationIntent(prisma, hsNode);
-      const ownerUserId = existing?.ownerUserId ?? pendingIntent?.userId ?? owner?.id ?? null;
+      // Headscale is the single ownership authority: its "user@" ACL
+      // expansion and the node's identity decide real access, so the
+      // database always follows it (Headscale cannot move nodes between
+      // users; PATCH /nodes/:id/owner refuses mismatching transfers).
+      const ownerUserId = owner?.id ?? null;
       const driftStatus = ownerUserId ? "managed" : "unassigned";
+      if (existing && existing.ownerUserId !== ownerUserId) {
+        await audit(prisma, actor, "node.owner_reconciled", "node", existing.id, { from: existing.ownerUserId, to: ownerUserId, headscaleUserName: hsNode.userName });
+      }
 
       const node = await prisma.node.upsert({
         where: { headscaleNodeId: hsNode.id },
@@ -95,5 +105,5 @@ export async function syncHeadscaleNodes(
     }
 
     return { count: results.length, staleDeleted: staleNodes.count, nodes: results, runtimeNodes: hsNodes };
-  });
+  }));
 }

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AuthActor } from "../../plugins/auth.js";
 import type { HeadscaleClient, HeadscaleNode, HeadscalePolicy } from "../../services/headscale/HeadscaleClient.js";
 import { audit } from "../../utils/audit.js";
+import { policyLock } from "../../utils/lock.js";
 import { syncHeadscaleNodes } from "../nodes/nodeSync.service.js";
 import { generatePolicy } from "./policy.generator.js";
 
@@ -32,23 +33,40 @@ export async function applyCurrentPolicy(
   options: ApplyCurrentPolicyOptions = {}
 ) {
   const runtimeNodes = options.runtimeNodes ?? (options.skipSync ? [] : (await syncHeadscaleNodes(prisma, headscale, actor)).runtimeNodes);
-  const policy = await generatePolicy(prisma, runtimeNodes);
-  if (options.onlyIfChanged) {
-    const currentPolicy = await headscale.getPolicy();
-    if (stablePolicyJson(currentPolicy) === stablePolicyJson(policy)) return null;
-  }
+  // Generate from the database and apply under one lock: the policy that lands
+  // in Headscale last is always generated from the newest database state.
+  return policyLock.runExclusive(async () => {
+    const policy = await generatePolicy(prisma, runtimeNodes);
+    if (options.onlyIfChanged) {
+      const currentPolicy = await headscale.getPolicy();
+      if (stablePolicyJson(currentPolicy) === stablePolicyJson(policy)) return null;
+    }
 
-  await headscale.applyPolicy(policy);
+    await headscale.applyPolicy(policy);
+    return recordPolicyVersion(prisma, actor, JSON.stringify(policy, null, 2));
+  });
+}
+
+/** Must be called while holding policyLock. */
+export async function recordPolicyVersion(prisma: PrismaClient, actor: AuthActor | undefined, policyJson: string, rollbackFromVersionId?: string) {
   const latest = await prisma.policyVersion.findFirst({ orderBy: { version: "desc" } });
   const version = (latest?.version ?? 0) + 1;
   const record = await prisma.policyVersion.create({
     data: {
       version,
-      policyJson: JSON.stringify(policy, null, 2),
+      policyJson,
       generatedByUserId: actor?.type === "user" ? actor.id : null,
-      appliedAt: new Date()
+      appliedAt: new Date(),
+      rollbackFromVersionId
     }
   });
-  await audit(prisma, actor, "policy.applied", "policy_version", record.id, { version });
+  await audit(
+    prisma,
+    actor,
+    rollbackFromVersionId ? "policy.rollback_applied" : "policy.applied",
+    "policy_version",
+    record.id,
+    rollbackFromVersionId ? { version, rollbackFromVersionId } : { version }
+  );
   return record;
 }

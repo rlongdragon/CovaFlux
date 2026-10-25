@@ -26,17 +26,6 @@ async function waitForPolicyVersionAfter(version: number) {
   throw new Error(`Timed out waiting for policy version after ${version}`);
 }
 
-async function setNodeOwnerStable(nodeId: string, ownerUserId: string) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    await app.prisma.node.update({ where: { id: nodeId }, data: { ownerUserId, driftStatus: "managed" } });
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    const fresh = await app.prisma.node.findUniqueOrThrow({ where: { id: nodeId } });
-    if (fresh.ownerUserId === ownerUserId) return;
-  }
-  throw new Error(`Timed out pinning node ${nodeId} to owner ${ownerUserId}`);
-}
-
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "covaflux-exit-node-e2e-"));
   process.env.DATABASE_URL = `file:${join(tmpDir, "test.db")}`;
@@ -103,7 +92,17 @@ describe("exit-node approval route", () => {
     expect(createOwner.statusCode, createOwner.body).toBe(200);
     const ownerId = createOwner.json().id;
 
-    await setNodeOwnerStable(ids.node, ownerId);
+    // Ownership follows Headscale, so the owner's node is registered with a
+    // key issued for that user.
+    const key = await app.inject({ method: "POST", url: "/nodes/register-key", headers: h(), payload: { userId: ownerId, nodeName: "owner-exit-node" } });
+    expect(key.statusCode, key.body).toBe(200);
+    const mock = app.headscale as MockHeadscaleClient;
+    const runtime = (await mock.listNodes()).find((node) => node.name === "owner-exit-node")!;
+    mock.setNode({ ...runtime, advertisedRoutes: ["0.0.0.0/0", "::/0"], approvedRoutes: [], isExitNode: true, isExitNodeApproved: false });
+    const sync = await app.inject({ method: "POST", url: "/nodes/sync", headers: h() });
+    expect(sync.statusCode, sync.body).toBe(200);
+    const ownerNode = await app.prisma.node.findFirstOrThrow({ where: { name: "owner-exit-node" } });
+    expect(ownerNode.ownerUserId).toBe(ownerId);
 
     const login = await app.inject({
       method: "POST",
@@ -113,21 +112,13 @@ describe("exit-node approval route", () => {
     expect(login.statusCode, login.body).toBe(200);
     const ownerHeaders = { authorization: `Bearer ${login.json().token}` };
 
-    const mock = app.headscale as MockHeadscaleClient;
-    const runtime = (await mock.listNodes())[0];
-    mock.setNode({ ...runtime, advertisedRoutes: ["0.0.0.0/0", "::/0"], approvedRoutes: [], isExitNode: true, isExitNodeApproved: false });
-
-    const approve = await app.inject({ method: "POST", url: `/nodes/${ids.node}/exit-node/approve`, headers: ownerHeaders });
+    const approve = await app.inject({ method: "POST", url: `/nodes/${ownerNode.id}/exit-node/approve`, headers: ownerHeaders });
     expect(approve.statusCode, approve.body).toBe(200);
     expect(approve.json().isExitNodeApproved).toBe(true);
 
-    const disable = await app.inject({ method: "POST", url: `/nodes/${ids.node}/exit-node/disable`, headers: ownerHeaders });
+    const disable = await app.inject({ method: "POST", url: `/nodes/${ownerNode.id}/exit-node/disable`, headers: ownerHeaders });
     expect(disable.statusCode, disable.body).toBe(200);
     expect(disable.json().isExitNodeApproved).toBe(false);
-
-    // restore admin ownership so later cases keep their original fixture
-    const adminUser = await app.prisma.user.findFirstOrThrow({ where: { username: "admin" } });
-    await setNodeOwnerStable(ids.node, adminUser.id);
   });
 
   it("lets an administrator approve advertised exit routes without dropping other approved routes", async () => {

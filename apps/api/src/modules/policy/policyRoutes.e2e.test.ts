@@ -138,15 +138,13 @@ describe("full ACL-route coverage (e2e, reconciler off)", () => {
     expect(JSON.stringify(policy)).toContain("100.64.0.");
   });
 
-  it("PATCH /nodes/:id/owner auto-applies and moves node ownership in ACL", async () => {
-    await expectAutoApply("owner change to bob", () =>
-      app.inject({ method: "PATCH", url: `/nodes/${ids.node}/owner`, headers: h(), payload: { ownerUserId: ids.bob } })
-    );
-    const policy = await waitForPolicy((j) => j.includes("bob@"));
-    // bob now owns the node, so bob@ must have a rule reaching the node host.
-    expect(policy).toContain("bob@");
-    // restore to alice for the share tests below
-    await app.inject({ method: "PATCH", url: `/nodes/${ids.node}/owner`, headers: h(), payload: { ownerUserId: ids.alice } });
+  it("PATCH /nodes/:id/owner refuses a transfer Headscale cannot enforce", async () => {
+    const before = app.policyAutoApplyCount;
+    const res = await app.inject({ method: "PATCH", url: `/nodes/${ids.node}/owner`, headers: h(), payload: { ownerUserId: ids.bob } });
+    expect(res.statusCode, res.body).toBe(409);
+    expect(app.policyAutoApplyCount).toBe(before);
+    const node = await app.prisma.node.findUniqueOrThrow({ where: { id: ids.node } });
+    expect(node.ownerUserId).toBe(ids.alice);
   });
 
   it("POST /nodes/:id/shares/users auto-applies", async () => {

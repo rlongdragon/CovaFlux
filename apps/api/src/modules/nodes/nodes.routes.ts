@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { registerKeySchema } from "@covaflux/shared";
+import { changeNodeOwnerSchema, registerKeySchema } from "@covaflux/shared";
 import { audit } from "../../utils/audit.js";
+import { httpError } from "../../utils/httpError.js";
+import { nodeLock } from "../../utils/lock.js";
 import { hashLookupToken } from "../../utils/secrets.js";
 import { applyCurrentPolicy } from "../policy/policy.service.js";
 import { markPolicyDirty } from "../../plugins/policyTracking.js";
@@ -106,61 +108,71 @@ export async function nodesRoutes(app: FastifyInstance) {
     return { count: result.count, staleDeleted: result.staleDeleted, policyApplied: Boolean(policyVersion), nodes: result.nodes };
   });
 
+  // Owner-guarded mutations run under nodeLock so the ownership check and the
+  // action see the same owner (no transfer can land in between).
   app.post("/nodes/:id/exit-node/approve", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
-    const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
-    if (!runtime) return reply.status(404).send({ error: "headscale_node_not_found" });
-    const exitRoutes = runtime.advertisedRoutes.filter((route) => route === "0.0.0.0/0" || route === "::/0");
-    if (exitRoutes.length === 0) return reply.status(400).send({ error: "exit_node_not_advertised" });
-    const approvedRoutes = [...new Set([...runtime.approvedRoutes, ...exitRoutes])];
-    const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
-    await audit(app.prisma, actor, "node.exit_node_approved", "node", id, { routes: exitRoutes });
-    markPolicyDirty();
-    return updated;
+    return nodeLock.runExclusive(async () => {
+      const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+      if (!canManageNode(actor, node.ownerUserId)) throw httpError(403, "permission_denied");
+      const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+      if (!runtime) throw httpError(404, "headscale_node_not_found");
+      const exitRoutes = runtime.advertisedRoutes.filter((route) => route === "0.0.0.0/0" || route === "::/0");
+      if (exitRoutes.length === 0) throw httpError(400, "exit_node_not_advertised");
+      const approvedRoutes = [...new Set([...runtime.approvedRoutes, ...exitRoutes])];
+      const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
+      await audit(app.prisma, actor, "node.exit_node_approved", "node", id, { routes: exitRoutes });
+      markPolicyDirty();
+      return updated;
+    });
   });
 
   app.post("/nodes/:id/exit-node/disable", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
-    const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
-    if (!runtime) return reply.status(404).send({ error: "headscale_node_not_found" });
-    const approvedRoutes = runtime.approvedRoutes.filter((route) => route !== "0.0.0.0/0" && route !== "::/0");
-    const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
-    await audit(app.prisma, actor, "node.exit_node_disabled", "node", id);
-    markPolicyDirty();
-    return updated;
+    return nodeLock.runExclusive(async () => {
+      const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+      if (!canManageNode(actor, node.ownerUserId)) throw httpError(403, "permission_denied");
+      const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+      if (!runtime) throw httpError(404, "headscale_node_not_found");
+      const approvedRoutes = runtime.approvedRoutes.filter((route) => route !== "0.0.0.0/0" && route !== "::/0");
+      const updated = await app.headscale.setApprovedRoutes(runtime.id, approvedRoutes);
+      await audit(app.prisma, actor, "node.exit_node_disabled", "node", id);
+      markPolicyDirty();
+      return updated;
+    });
   });
 
   app.post("/nodes/:id/expire", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
-    await app.headscale.expireNode(node.headscaleNodeId);
-    await audit(app.prisma, actor, "node.expired", "node", id);
-    // Headscale-only change (no tracked DB write) — mark dirty so the
-    // onResponse hook reapplies policy and drops the expired node from peers.
-    markPolicyDirty();
-    return { ok: true };
+    return nodeLock.runExclusive(async () => {
+      const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+      if (!canManageNode(actor, node.ownerUserId)) throw httpError(403, "permission_denied");
+      await app.headscale.expireNode(node.headscaleNodeId);
+      await audit(app.prisma, actor, "node.expired", "node", id);
+      // Headscale-only change (no tracked DB write) — mark dirty so the
+      // onSend hook reapplies policy and drops the expired node from peers.
+      markPolicyDirty();
+      return { ok: true };
+    });
   });
 
   app.delete("/nodes/:id", async (request, reply) => {
     const actor = await app.requireUserOrScope(request, "nodes:write");
     const { id } = request.params as { id: string };
-    const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
-    if (!canManageNode(actor, node.ownerUserId)) return reply.status(403).send({ error: "permission_denied" });
-    await app.headscale.deleteNode(node.headscaleNodeId);
-    await app.prisma.node.update({ where: { id }, data: { deletedAt: new Date() } });
-    await audit(app.prisma, actor, "node.deleted", "node", id);
-    return { ok: true };
+    return nodeLock.runExclusive(async () => {
+      const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+      if (!canManageNode(actor, node.ownerUserId)) throw httpError(403, "permission_denied");
+      await app.headscale.deleteNode(node.headscaleNodeId);
+      await app.prisma.node.update({ where: { id }, data: { deletedAt: new Date() } });
+      await audit(app.prisma, actor, "node.deleted", "node", id);
+      return { ok: true };
+    });
   });
 
-  app.patch("/nodes/:id/owner", async (request) => {
+  app.patch("/nodes/:id/owner", async (request, reply) => {
     const actor = await app.requireScope(request, "nodes:write");
     if (actor.type !== "user" || actor.role !== "admin") {
       const error = new Error("Admin role required");
@@ -168,9 +180,27 @@ export async function nodesRoutes(app: FastifyInstance) {
       throw error;
     }
     const { id } = request.params as { id: string };
-    const body = request.body as { ownerUserId: string };
-    const node = await app.prisma.node.update({ where: { id }, data: { ownerUserId: body.ownerUserId, driftStatus: "managed" } });
-    await audit(app.prisma, actor, "node.owner_changed", "node", id, { ownerUserId: body.ownerUserId });
-    return node;
+    const input = changeNodeOwnerSchema.parse(request.body);
+    return nodeLock.runExclusive(async () => {
+      const node = await app.prisma.node.findUniqueOrThrow({ where: { id } });
+      if (node.deletedAt) throw httpError(404, "not_found");
+      const owner = await app.prisma.user.findUniqueOrThrow({ where: { id: input.ownerUserId } });
+      const runtime = (await app.headscale.listNodes()).find((candidate) => candidate.id === node.headscaleNodeId);
+      if (!runtime) throw httpError(404, "headscale_node_not_found");
+      // Headscale is the single ownership authority (its "user@" ACL expansion
+      // and the node's own identity follow the registering user) and it has no
+      // API to move a node. A database-only transfer would split authority, so
+      // only an assignment that matches Headscale is accepted.
+      if (runtime.userName !== owner.headscaleUserName) {
+        throw httpError(
+          409,
+          "owner_transfer_unsupported",
+          "Headscale binds a node to the user that registered it. Delete the node and register it again with a key for the new owner."
+        );
+      }
+      const updated = await app.prisma.node.update({ where: { id }, data: { ownerUserId: owner.id, driftStatus: "managed" } });
+      await audit(app.prisma, actor, "node.owner_changed", "node", id, { from: node.ownerUserId, ownerUserId: owner.id });
+      return updated;
+    });
   });
 }

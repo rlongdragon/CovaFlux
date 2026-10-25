@@ -19,17 +19,21 @@ npm run dev:web:local
 串接本機 Docker Headscale：
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d headscale
-docker compose -f deploy/docker-compose.yml exec headscale headscale apikeys create --expiration 365d
-HEADSCALE_CLIENT_MODE=rest HEADSCALE_API_KEY=<API_KEY> npm run dev:api:local
+cp deploy/.env.example deploy/.env   # 填入必要設定
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml up -d headscale
+HEADSCALE_CLIENT_MODE=rest \
+HEADSCALE_API_KEY=$(docker compose -f deploy/docker-compose.yml exec -u headscale headscale cat /secrets/headscale_api_key) \
+npm run dev:api:local
 ```
 
-預設 bootstrap admin：
+開發用 bootstrap admin（僅限 `npm run dev:api:local`）：
 
 ```text
 username: admin
 password: change-me-password
 ```
+
+正式環境（`NODE_ENV=production`）若使用這組密碼、公開過的 `JWT_SECRET` 或 `CORS_ORIGINS=*` 會拒絕啟動；既有 admin 若仍是公開的預設密碼，啟動時會改成 `BOOTSTRAP_ADMIN_PASSWORD`。
 
 ## Exit Node
 
@@ -45,14 +49,13 @@ POST /nodes/:id/exit-node/disable
 ## Docker Compose
 
 ```bash
-docker compose -f deploy/docker-compose.yml up --build
+cp deploy/.env.example deploy/.env   # 設定網域、JWT_SECRET、BOOTSTRAP_ADMIN_PASSWORD
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Docker Compose 的 Headscale runtime 會自動建立 Headscale API key，並寫入 `covaflux-secrets` volume；API 服務會從 `HEADSCALE_API_KEY_FILE` 讀取，不需要手動 copy token。
+只有 Caddy 對外發布（80/443），負責申請 TLS 憑證並提供：
 
-服務：
+- Web 管理介面與 API（`/api`）：`https://$COVAFLUX_DOMAIN`
+- Headscale client login server：`https://$HEADSCALE_DOMAIN`（不對外開放 Headscale 管理 API、metrics、debug 路徑）
 
-- Web: http://localhost:12146
-- API: http://localhost:12145
-- Headscale client login server: http://localhost
-- Headscale development API: http://localhost:12147
+Headscale runtime 會建立 CovaFlux 使用的 API key，存放在 `covaflux-secrets` volume（只有這兩個服務可讀），並在 `HEADSCALE_API_KEY_ROTATE_AFTER_DAYS` 後自動輪替；API 會自動重新讀取。所有容器皆為唯讀 root filesystem、`no-new-privileges`、移除 capabilities 並限制記憶體／PID；應用程式以非 root 使用者執行。

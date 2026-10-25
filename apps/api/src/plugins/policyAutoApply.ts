@@ -24,9 +24,11 @@ declare module "fastify" {
  *             extension's markPolicyDirty finds THIS request's store throughout
  *             the handler. A fresh store per request means suppressDepth never
  *             bleeds into the next request.
- * onResponse: read the dirty flag from request.policyStore — onResponse runs in
- *             a detached async context where getStore() is undefined, so we read
- *             the concrete object we kept on the request.
+ * onSend:     read the dirty flag from request.policyStore and reapply BEFORE
+ *             the response is sent. If the apply fails the client gets a 503
+ *             instead of a success that Headscale does not enforce (e.g. a
+ *             revoked share that still grants access). The write itself is
+ *             kept; the reconciler (and startup reconcile) keep retrying.
  *
  * Routes no longer call applyCurrentPolicy() for DB-driven ACL changes — the
  * data layer drives it. The background reconciler remains the safety net for
@@ -42,10 +44,12 @@ export const registerPolicyAutoApply = fp(
       enterPolicyContext(store);
     });
 
-    app.addHook("onResponse", async (request, reply) => {
+    app.addHook("onSend", async (request, reply, payload) => {
       // Only reapply for successful, mutating responses.
-      if (reply.statusCode >= 400) return;
-      if (!request.policyStore?.dirty) return;
+      if (reply.statusCode >= 400) return payload;
+      if (!request.policyStore?.dirty) return payload;
+      // Apply once per request even if onSend runs again for an error reply.
+      request.policyStore.dirty = false;
 
       // The mechanism decided this request touched policy state. Count it even
       // if onlyIfChanged later dedups to a no-op — this is the signal that the
@@ -56,13 +60,17 @@ export const registerPolicyAutoApply = fp(
         await applyCurrentPolicy(app.prisma, app.headscale, request.actor, {
           onlyIfChanged: true
         });
+        return payload;
       } catch (error) {
-        // The response is already sent; never throw here. Surface loudly so a
-        // failed reapply is visible — the background reconciler will retry.
         app.log.error(
           { err: error, url: request.url, method: request.method },
           "automatic policy reapply failed after policy-affecting write"
         );
+        reply.code(503).header("content-type", "application/json; charset=utf-8");
+        return JSON.stringify({
+          error: "policy_apply_failed",
+          message: "The change was saved but could not be enforced in Headscale yet; it will be retried automatically."
+        });
       }
     });
   },

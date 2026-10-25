@@ -42,9 +42,12 @@ interface HeadscaleApiNode {
 
 export class RestHeadscaleClient implements HeadscaleClient {
   private readonly baseUrl: string;
+  private readonly apiKey: () => string | undefined;
 
-  constructor(baseUrl: string, private readonly apiKey: string, private readonly logger?: HeadscaleLogger) {
+  /** apiKey may be a provider so a rotated key file is picked up per request. */
+  constructor(baseUrl: string, apiKey: string | (() => string | undefined), private readonly logger?: HeadscaleLogger) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.apiKey = typeof apiKey === "string" ? () => apiKey : apiKey;
   }
 
   async health() {
@@ -166,11 +169,14 @@ export class RestHeadscaleClient implements HeadscaleClient {
     const method = init.method ?? "GET";
     const startedAt = Date.now();
 
+    const apiKey = this.apiKey();
+    if (!apiKey) throw new Error("Headscale API key is not configured");
+
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           ...(init.body === undefined ? {} : { "content-type": "application/json" })
         },
         body: init.body === undefined ? undefined : JSON.stringify(init.body)

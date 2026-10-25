@@ -9,6 +9,18 @@ export async function verifySecret(hash: string, secret: string) {
   return argon2.verify(hash, secret);
 }
 
+let dummyHash: Promise<string> | undefined;
+
+/**
+ * Spend the same Argon2 verify cost as a real password check. Used when the
+ * username does not exist so response timing does not reveal valid usernames.
+ */
+export async function verifyAgainstDummy(secret: string) {
+  dummyHash ??= hashSecret(crypto.randomBytes(32).toString("base64url"));
+  await argon2.verify(await dummyHash, secret).catch(() => false);
+  return false;
+}
+
 export function createOpaqueToken(prefix: string) {
   return `${prefix}_${crypto.randomBytes(32).toString("base64url")}`;
 }
